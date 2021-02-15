@@ -1,6 +1,8 @@
 using QXTn
 using Test
+using TestSetExtensions
 
-@testset "QXTn.jl" begin
-    # Write your tests here.
+
+@testset ExtendedTestSet "QXTn.jl" begin
+    @includetests ARGS
 end
