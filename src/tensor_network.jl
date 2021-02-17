@@ -172,16 +172,17 @@ function simple_contraction!(tn::TensorNetwork)
 end
 
 """
-    contract_pair!(tn::TensorNetwork, A_id::Symbol, B_id::Symbol)
+    contract_pair!(tn::TensorNetwork, A_id::Symbol, B_id::Symbol; mock::Bool=false)
 
-Contract the tensors in 'tn' with ids 'A_id' and 'B_id'.
+Contract the tensors in 'tn' with ids 'A_id' and 'B_id'. If the mock flag is true then the
+new tensor will be a mock tensor with the right dimensions but without the actual data
 """
-function contract_pair!(tn::TensorNetwork, A_id::Symbol, B_id::Symbol)
+function contract_pair!(tn::TensorNetwork, A_id::Symbol, B_id::Symbol; mock::Bool=false)
     # Get and contract the tensors A and B to create tensor C.
     A = tn.tensor_map[A_id]
     B = tn.tensor_map[B_id]
     C_id = next_tensor_id()
-    C = contract_tensors(A, B)
+    C = contract_tensors(A, B, mock=mock)
 
     # Remove the contracted indices from the bond map in tn. Also, replace all references
     # in tn to tensors A and B with a reference to tensor C.
@@ -313,7 +314,7 @@ indices corresponding to the second index of the first tensor and first index of
 tensor.
 """
 function contract_ncon_indices(tn::TensorNetwork, A_sym::Symbol, B_sym::Symbol)
-    _contract_ncon_indices(inds(tn[A_sym]), inds(tn[B_sym]))
+    _contract_ncon_indices(IndexSet(inds(tn[A_sym])), IndexSet(inds(tn[B_sym])))
 end
 
 """
