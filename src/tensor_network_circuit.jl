@@ -77,7 +77,6 @@ the qubits it acts on and an array of the matrix elements
 function Base.push!(tnc::TensorNetworkCircuit,
                     qubits::Vector{Int64},
                     data::Array{T, 2};
-                    diagonal_check::Bool=false,
                     decompose::Bool=true) where T                    
     input_indices = tnc.output_indices[qubits]
     tnc.output_indices[qubits] = output_indices = [prime(x) for x in input_indices]
@@ -107,7 +106,7 @@ function Base.push!(tnc::TensorNetworkCircuit,
     end
 end
 
-Base.push!(tnc::TensorNetworkCircuit, args...) = Base.push!(tnc.tn, args...)
+Base.push!(tnc::TensorNetworkCircuit, indices::Vector{<:Index}, data::Array{T, N}) where {T, N} = push!(tnc.tn, indices, data)
 
 """
     delete!(tnc::TensorNetworkCircuit, tensor_id::Symbol)

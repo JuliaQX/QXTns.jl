@@ -41,12 +41,12 @@ of the original tensor which can be identified
 function find_hyper_edges(A::AbstractArray{Elt, N}) where {Elt, N}
     if N == 2
         if isdiagonal(A)
-            return [(1, 2)]
+            return [[1, 2]]
         else
-            return []
+            return Array{Array{Int64, 1}, 1}()
         end
     elseif N > 2
-        groups = []
+        groups = Array{Array{Int64, 1}, 1}()
         for i in 1:N-1
             for j in i+1:N
                 if isdiagonal(A, Pair(i, j))
@@ -56,16 +56,17 @@ function find_hyper_edges(A::AbstractArray{Elt, N}) where {Elt, N}
                         igroups = [x for x in groups if length(intersect(x, (i, j))) > 0]
                         # filter these from main groups list
                         filter!(x -> length(intersect(x, (i, j))) == 0, groups)
-                        merged_group = Tuple(reduce(union, igroups, init=[i, j]))
+                        merged_group = sort(reduce(union, igroups, init=[i, j]))
                         push!(groups, merged_group)
                     else
-                        push!(groups, (i, j))
+                        push!(groups, [i, j])
                     end
                 end
             end
         end
         return groups
     end
+    Array{Array{Int64, 1}, 1}()
 end
 
 

@@ -23,3 +23,10 @@ Julia 1.5:
   extends:
     - .script
     - .coverage
+Julia 1.6:
+  image: julia:1.6
+  tags:
+    - docker
+  extends:
+    - .script
+    - .coverage

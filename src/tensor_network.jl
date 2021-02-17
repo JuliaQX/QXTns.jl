@@ -1,5 +1,6 @@
 using DataStructures
 using ITensors
+using QXTn
 
 # TensorNetwork struct and public functions
 export next_tensor_id
@@ -13,21 +14,21 @@ const qxsim_ids = Dict{Symbol, Int64}(:tensor_id => 0)
 
 """Tensor network data-structure"""
 mutable struct TensorNetwork
-    tensor_map::OrderedDict{Symbol, ITensor}
+    tensor_map::OrderedDict{Symbol, QXTensor}
     bond_map::OrderedDict{Index, Vector{Symbol}}
 end
 
 # constructors
-TensorNetwork() = TensorNetwork(OrderedDict{Symbol, ITensor}(), OrderedDict{Index, Vector{Symbol}}())
+TensorNetwork() = TensorNetwork(OrderedDict{Symbol, QXTensor}(), OrderedDict{Index, Vector{Symbol}}())
 
 """
-    TensorNetwork(array::Vector{<: ITensor})
+    TensorNetwork(array::Vector{<: QXTensor})
 
 Outer consturctor to create a tensor network object from an array of
 ITensor objects
 """
-function TensorNetwork(array::Vector{<: ITensor})
-    tensor_map = OrderedDict{Symbol, ITensor}()
+function TensorNetwork(array::Vector{<: QXTensor})
+    tensor_map = OrderedDict{Symbol, QXTensor}()
     bond_map = OrderedDict{Index, Vector{Symbol}}()
     for (i, tensor) in enumerate(array)
         tensor_id = next_tensor_id()
@@ -48,7 +49,7 @@ Base.length(tn::TensorNetwork) = length(tn.tensor_map)
 Base.values(tn::TensorNetwork) = values(tn.tensor_map)
 Base.iterate(tn::TensorNetwork) = iterate(values(tn))
 Base.iterate(tn::TensorNetwork, state) = iterate(values(tn), state)
-Base.eltype(tn::TensorNetwork) = ITensor
+Base.eltype(::TensorNetwork) = QXTensor
 Base.keys(tn::TensorNetwork) = keys(tn.tensor_map)
 Base.getindex(tn::TensorNetwork, i::Symbol) = tn.tensor_map[i]
 Base.haskey(tn::TensorNetwork, i::Symbol) = haskey(tn.tensor_map, i)
@@ -92,11 +93,11 @@ function Base.merge(a::TensorNetwork, b::TensorNetwork)
 end
 
 """
-    tensor_data(tensor::ITensor)
+    tensor_data(tensor::QXTensor)
 
 Get the data associated with given tensor
 """
-function tensor_data(tensor::ITensor)
+function tensor_data(tensor::QXTensor)
     reshape(convert(Array, store(tensor)), Tuple([dim(x) for x in inds(tensor)]))
 end
 
@@ -111,8 +112,7 @@ function Base.push!(tn::TensorNetwork,
                     indices::Vector{<:Index},
                     data::Array{T, N}) where {T, N}
     @assert size(data) == Tuple(dim.(indices))
-    data_store = NDTensors.Dense(reshape(data, prod(size(data))))
-    tensor = ITensor(data_store, indices)
+    tensor = QXTensor(data, indices)
     tid = next_tensor_id()
     tn.tensor_map[tid] = tensor
     for bond in indices
@@ -127,12 +127,12 @@ end
 
 """
     push!(tn::TensorNetwork,
-          tensor::ITensor{N}) where {N}
+          tensor::QXTensor)
 
 Function to add a tensor
 """
 function Base.push!(tn::TensorNetwork,
-                    tensor::ITensor{N}) where {N}
+                    tensor::QXTensor)
     tid = next_tensor_id()
     tn.tensor_map[tid] = tensor
     for bond in inds(tensor)
@@ -153,7 +153,7 @@ Function to perfrom a simple contraction, contracting all tensors in order.
 Only useful for very small networks for testing.
 """
 function simple_contraction(tn::TensorNetwork)
-    store(reduce(contract_tensors, tn, init=ITensor(1.)))
+    store(reduce(contract_tensors, tn, init=QXTensor(1.)))
 end
 
 """
@@ -185,10 +185,11 @@ function contract_pair!(tn::TensorNetwork, A_id::Symbol, B_id::Symbol)
 
     # Remove the contracted indices from the bond map in tn. Also, replace all references
     # in tn to tensors A and B with a reference to tensor C.
-    for ind in commoninds(A, B)
+    common_indices = intersect(inds(A), inds(B))
+    for ind in common_indices
         delete!(tn.bond_map, ind)
     end
-    for ind in noncommoninds(A, B)
+    for ind in setdiff(union(inds(A), inds(B)), common_indices)
         tn.bond_map[ind] = replace(tn.bond_map[ind], A_id=>C_id, B_id=>C_id)
     end
 
@@ -267,18 +268,20 @@ the svd is performed.
 - `cutoff::Float64`: set the desired truncation error of the SVD.
 """
 function replace_with_svd!(tn::TensorNetwork, 
-                            tensor_id::Symbol,
-                            left_indices::Array{<:Index, 1};
-                            kwargs...)
+                           tensor_id::Symbol,
+                           left_indices::Array{<:Index, 1};
+                           kwargs...)
     # Get the tensor and decompose it.
     tensor = tn.tensor_map[tensor_id]
-    U, S, V = svd(tensor, left_indices; use_absolute_cutoff=true, kwargs...)
+    U, S, V = svd(convert(ITensor, tensor), left_indices; use_absolute_cutoff=true, kwargs...)
+    S_data = reshape(collect(Diagonal(store(S))), prod(size(S)))
+    S_QXTensor = QXTensor(S_data, collect(inds(S)))
 
     # Remove the original tensor and add its svd factors to the network.
     delete!(tn, tensor_id)
-    U_id = push!(tn, U)
-    S_id = push!(tn, S)
-    V_id = push!(tn, V)
+    U_id = push!(tn, convert(QXTensor, U))
+    S_id = push!(tn, S_QXTensor)
+    V_id = push!(tn, convert(QXTensor, V))
     U_id, S_id, V_id
 end
 
@@ -346,23 +349,4 @@ function replace_tensor_symbol!(tn::TensorNetwork, orig_sym::Symbol, new_sym::Sy
     end
     tn.tensor_map[new_sym] = tensor
     delete!(tn.tensor_map, orig_sym)
-end
-
-"""
-    use_mock_tensors(tn::TensorNetwork)
-
-Function to create a copy of the given tensor network with the storage replaced by
-mock tensors
-"""
-function use_mock_tensors(tn::TensorNetwork)
-    new_tensor_map = OrderedDict{Symbol, ITensor}()
-    bond_map = OrderedDict{Index, Vector{Symbol}}()
-    for (sym, tensor) in pairs(tn)
-        mock_tensor = MockTensor{ComplexF64}(collect(size(tensor_data(tn, sym))))
-        new_tensor_map[sym] = ITensor(mock_tensor, inds(tensor))
-    end
-    for i in bonds(tn)
-        bond_map[i] = tn[i]
-    end
-    TensorNetwork(new_tensor_map, bond_map)
 end
