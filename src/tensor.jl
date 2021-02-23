@@ -169,9 +169,9 @@ end
 """
     contract_tensors(A::QXTensor, B::QXTensor; mock::Bool=false)
 
-Function contract two QXTensors and return another QXTensor. If the mock flag
-is false or either of the input tensors are false then the storage for the final
-tensor will be of type MockTensor
+Function to contract two QXTensors and return another QXTensor. If the mock flag
+is false or either of the input tensors use MockTensor then the storage for the final
+tensor will be of type MockTensor.
 """
 function contract_tensors(A::QXTensor, B::QXTensor; mock::Bool=false)
     (labelsA,labelsB) = ITensors.compute_contraction_labels(IndexSet(inds(A)),IndexSet(inds(B)))

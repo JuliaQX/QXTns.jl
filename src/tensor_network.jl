@@ -7,7 +7,6 @@ export next_tensor_id
 export TensorNetwork, bonds, simple_contraction, simple_contraction!, tensor_data, neighbours
 export decompose_tensor!, replace_with_svd!
 export contract_tn!, contract_pair!, replace_tensor_symbol!, contract_ncon_indices
-export use_mock_tensors
 
 const qxsim_ids = Dict{Symbol, Int64}(:tensor_id => 0)
 @noinline next_tensor_id() = begin qxsim_ids[:tensor_id] += 1; Symbol("t$(qxsim_ids[:tensor_id])") end
@@ -24,8 +23,7 @@ TensorNetwork() = TensorNetwork(OrderedDict{Symbol, QXTensor}(), OrderedDict{Ind
 """
     TensorNetwork(array::Vector{<: QXTensor})
 
-Outer consturctor to create a tensor network object from an array of
-ITensor objects
+Outer constructor to create a tensor network object from an array of ITensor objects.
 """
 function TensorNetwork(array::Vector{<: QXTensor})
     tensor_map = OrderedDict{Symbol, QXTensor}()
@@ -44,7 +42,7 @@ function TensorNetwork(array::Vector{<: QXTensor})
     TensorNetwork(tensor_map, bond_map)
 end
 
-Base.copy(tn::TensorNetwork) = TensorNetwork(collect(values(tn)))
+Base.copy(tn::TensorNetwork) = TensorNetwork(copy(tn.tensor_map), copy(tn.bond_map))
 Base.length(tn::TensorNetwork) = length(tn.tensor_map)
 Base.values(tn::TensorNetwork) = values(tn.tensor_map)
 Base.iterate(tn::TensorNetwork) = iterate(values(tn))
@@ -104,16 +102,23 @@ end
 """
     push!(tn::TensorNetwork,
           indices::Vector{Index},
-          data::Array{T, N}) where {T, N}
+          data::Array{T, N}
+          tid::Union{Nothing, Symbol}=nothing) where {T, N}
 
-Function to add a tensor to the tensor network tensor data and indices
+Function to add a tensor to the tensor network.
+
+# Keywords
+- `tid::Union{Nothing, Symbol}=nothing`: the id for the new tensor in `tn`. An id is 
+generated if one is not set.
 """
 function Base.push!(tn::TensorNetwork,
                     indices::Vector{<:Index},
-                    data::Array{T, N}) where {T, N}
+                    data::Array{T, N};
+                    tid::Union{Nothing, Symbol}=nothing) where {T, N}
     @assert size(data) == Tuple(dim.(indices))
     tensor = QXTensor(data, indices)
-    tid = next_tensor_id()
+    if tid === nothing tid = next_tensor_id() end
+    @assert !(tid in keys(tn))
     tn.tensor_map[tid] = tensor
     for bond in indices
         if haskey(tn.bond_map, bond)
@@ -127,13 +132,20 @@ end
 
 """
     push!(tn::TensorNetwork,
-          tensor::QXTensor)
+          tensor::QXTensor;
+          tid::Union{Nothing, Symbol}=nothing) where {N}
 
-Function to add a tensor
+Function to add a tensor to the tensor network.
+
+# Keywords
+- `tid::Union{Nothing, Symbol}=nothing`: the id for the new tensor in `tn`. An id is 
+generated if one is not set.
 """
 function Base.push!(tn::TensorNetwork,
-                    tensor::QXTensor)
-    tid = next_tensor_id()
+                    tensor::QXTensor;
+                    tid::Union{Nothing, Symbol}=nothing) where {N}
+    if tid === nothing tid = next_tensor_id() end
+    # TODO: It might be a good idea to assert tid doesn't already exist in tn.
     tn.tensor_map[tid] = tensor
     for bond in inds(tensor)
         if haskey(tn.bond_map, bond)
@@ -175,13 +187,17 @@ end
     contract_pair!(tn::TensorNetwork, A_id::Symbol, B_id::Symbol; mock::Bool=false)
 
 Contract the tensors in 'tn' with ids 'A_id' and 'B_id'. If the mock flag is true then the
-new tensor will be a mock tensor with the right dimensions but without the actual data
+new tensor will be a mock tensor with the right dimensions but without the actual data.
+
+The resulting tensor is stored in `tn` under the symbol `C_id` if one is provided, otherwise
+a new id is created for it.
 """
-function contract_pair!(tn::TensorNetwork, A_id::Symbol, B_id::Symbol; mock::Bool=false)
+function contract_pair!(tn::TensorNetwork, A_id::Symbol, B_id::Symbol, C_id::Symbol=:_; 
+                        mock::Bool=false)
     # Get and contract the tensors A and B to create tensor C.
     A = tn.tensor_map[A_id]
     B = tn.tensor_map[B_id]
-    C_id = next_tensor_id()
+    C_id == :_ && (C_id = next_tensor_id())
     C = contract_tensors(A, B, mock=mock)
 
     # Remove the contracted indices from the bond map in tn. Also, replace all references
@@ -205,20 +221,18 @@ end
     contract_tn!(tn::TensorNetwork, plan)
 
 Contract the indices of 'tn' according to 'plan'.
-Contract each index in the contraction plan while skipping indices that are not shared
-by exactly two tensors in tn. (i.e. open indices and hyper edges are skipped.)
 """
-function contract_tn!(tn::TensorNetwork, plan::Array{<:Index, 1})
-    for index in plan
-        if haskey(tn, index)
-            tensor_pair = tn[index]
-            if length(tensor_pair) == 2
-                contract_pair!(tn, tensor_pair...)
-            end
-        end
+function contract_tn!(tn::TensorNetwork, plan::Array{NTuple{3, Symbol}, 1})
+    for (A_id, B_id, C_id) in plan
+        @assert haskey(tn.tensor_map, A_id)
+        @assert haskey(tn.tensor_map, B_id)
+        contract_pair!(tn, A_id, B_id, C_id)
     end
+
+    # Contract any disjoint tensors that may remain before returning the result.
     simple_contraction!(tn)
 end
+
 
 """
     decompose_tensor!(tn::TensorNetwork,

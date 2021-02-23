@@ -30,12 +30,12 @@ end
 
 function Base.copy(tnc::TensorNetworkCircuit)
     tn = TensorNetwork()    
-    f = x -> x === nothing ? nothing : push!(tn, tnc[x])
+    f = x -> x === nothing ? nothing : push!(tn, tnc[x]; tid=x)
     my_input_tensors = convert(Array{Union{Symbol, Nothing}}, f.(input_tensors(tnc)))
     my_output_tensors = convert(Array{Union{Symbol, Nothing}}, f.(output_tensors(tnc)))
     for x in keys(tnc)
         if !(x in input_tensors(tnc)) && !(x in output_tensors(tnc))
-            push!(tn, tnc[x])
+            push!(tn, tnc[x]; tid=x)
         end
     end
 
@@ -77,7 +77,7 @@ the qubits it acts on and an array of the matrix elements
 function Base.push!(tnc::TensorNetworkCircuit,
                     qubits::Vector{Int64},
                     data::Array{T, 2};
-                    decompose::Bool=true) where T                    
+                    decompose::Bool=true) where T                  
     input_indices = tnc.output_indices[qubits]
     tnc.output_indices[qubits] = output_indices = [prime(x) for x in input_indices]
     if length(qubits) == 1 || !decompose         
@@ -106,7 +106,7 @@ function Base.push!(tnc::TensorNetworkCircuit,
     end
 end
 
-Base.push!(tnc::TensorNetworkCircuit, indices::Vector{<:Index}, data::Array{T, N}) where {T, N} = push!(tnc.tn, indices, data)
+Base.push!(tnc::TensorNetworkCircuit, indices::Vector{<:Index}, data::Array{T, N}; kwargs...) where {T, N} = push!(tnc.tn, indices, data; kwargs...)
 
 """
     delete!(tnc::TensorNetworkCircuit, tensor_id::Symbol)
@@ -130,7 +130,7 @@ function push_input!(tnc::TensorNetworkCircuit, tensor::Array{Elt, 1}, pos::Int6
     if tensor_sym !== nothing
         delete!(tnc, tensor_sym)
     end
-    tnc.input_tensors[pos] = push!(tnc, [index], tensor)
+    tnc.input_tensors[pos] = push!(tnc, [index], tensor; tid=tensor_sym)
 end
 
 """
@@ -144,7 +144,7 @@ function push_output!(tnc::TensorNetworkCircuit, tensor::Array{Elt, 1}, pos::Int
     if tensor_sym !== nothing
         delete!(tnc, tensor_sym)
     end
-    tnc.output_tensors[pos] = push!(tnc, [index], tensor)    
+    tnc.output_tensors[pos] = push!(tnc, [index], tensor; tid=tensor_sym)    
 end
 
 """

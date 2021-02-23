@@ -46,9 +46,14 @@ using ITensors
     tensor_b = push!(a, b_inds, rand(2, 3))
     b = copy(a)
     @test length(a) == length(b)
-    @test !haskey(b, tensor_a) # test that symbols have changed
+    @test keys(a) == keys(b) # test tensor symbols are the same.
     delete!(a, tensor_a)
     @test length(a) != length(b)
+
+    # Test TN push kwargs
+    a = TensorNetwork()
+    tensor_a = push!(a, a_inds, rand(2, 4); tid = :t1)
+    @test haskey(a, :t1)
 end
 
 @testset "Test TensorNetworkCircuit struct and interface functions" begin
