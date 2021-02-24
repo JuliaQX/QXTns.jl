@@ -1,5 +1,4 @@
-using QXTn
-using Documenter
+using QXTn, Documenter
 
 makedocs(;
     modules=[QXTn],

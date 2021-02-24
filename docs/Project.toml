@@ -1,3 +1,5 @@
 [deps]
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
-QXTn = "995e1dad-72e3-4b97-b122-7deaeb8b44f9"
+
+[compat]
+Documenter = "0.26"
