@@ -64,6 +64,7 @@ output_indices(tnc::TensorNetworkCircuit) = tnc.output_indices
 bonds(tnc::TensorNetworkCircuit) = bonds(tnc.tn)
 qubits(tnc::TensorNetworkCircuit) = tnc.qubits
 tensor_data(tnc::TensorNetworkCircuit, i) = tensor_data(tnc.tn, i)
+get_hyperedges(tnc::TensorNetworkCircuit) = get_hyperedges(tnc.tn)
 
 
 """

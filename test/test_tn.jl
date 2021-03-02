@@ -175,3 +175,26 @@ end
                                         cutoff=1e-13)
     @test length(tnc.tn.tensor_map) == 9 + 1
 end
+
+@testset "Test hyperedge detection" begin
+    # prepare the circuit.
+    tnc = TensorNetworkCircuit(3)
+    push!(tnc, [1], QXTn.Gates.h(); decompose=false)
+    push!(tnc, [2], QXTn.Gates.h(); decompose=false)
+    push!(tnc, [3], QXTn.Gates.h(); decompose=false)
+    push!(tnc, [1], QXTn.Gates.h(); decompose=false)
+    push!(tnc, [2], QXTn.Gates.h(); decompose=false)
+    push!(tnc, [3], QXTn.Gates.h(); decompose=false)
+    @assert length(tnc.tn.bond_map) == 9
+
+    # For a tn with no diagonal tensors, each hyperedge consists of a single edge. 
+    hyperedges = get_hyperedges(tnc)
+    @test Set(hyperedges) == Set(values(tnc.tn.bond_map))
+
+    # Check if there are exactly 6 hyperedges found in the GHZ circuit, with 2 hyperedges
+    # containing 4 tensors and 4 hyperedges containing 2 tensors. 
+    tnc =  create_test_tnc(no_input=false, no_output=false, decompose=true)
+    hyperedges = get_hyperedges(tnc)
+    @test length(hyperedges) == 6
+    @test QXTn.counter(length.(hyperedges)) == Dict(4=>2, 2=>4)
+end

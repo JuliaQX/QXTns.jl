@@ -7,6 +7,7 @@ export next_tensor_id
 export TensorNetwork, bonds, simple_contraction, simple_contraction!, tensor_data, neighbours
 export decompose_tensor!, replace_with_svd!
 export contract_tn!, contract_pair!, replace_tensor_symbol!, contract_ncon_indices
+export get_hyperedges
 
 const qxsim_ids = Dict{Symbol, Int64}(:tensor_id => 0)
 @noinline next_tensor_id() = begin qxsim_ids[:tensor_id] += 1; Symbol("t$(qxsim_ids[:tensor_id])") end
@@ -364,4 +365,63 @@ function replace_tensor_symbol!(tn::TensorNetwork, orig_sym::Symbol, new_sym::Sy
     end
     tn.tensor_map[new_sym] = tensor
     delete!(tn.tensor_map, orig_sym)
+end
+
+
+"""
+    get_hyperedges(tn::TensorNetwork)::Array{Array{Symbol, 1}, 1}
+
+Return an array of hyperedges in the given tensornetwork `tn`. 
+
+Hyperedges are represented as arrays of tensor symbols.
+"""
+function get_hyperedges(tn::TensorNetwork)::Array{Array{Symbol, 1}, 1}
+    # hyperedges are represented as arrays of tensor symbols.
+    hyperedges = Array{Array{Symbol, 1}, 1}()
+
+    # Create an array of edges in the network which have not yet been assigned to a 
+    # hyperedge. Also create a queue which will be used to assign edges to hyperedges.
+    edges = collect(bonds(tn))
+    q = Queue{Index}()
+
+    while !isempty(edges)
+        # For the next edge in the network, which has not yet been assigned to a hyperedge,
+        # create a new hyperedge. Then add the edge to the queue where it will wait to be
+        # assigned to the new hyperedge.
+        push!(hyperedges, [])
+        enqueue!(q, pop!(edges))
+
+        while !isempty(q)
+            # While the queue is not empty, take the next edge in the queue and append 
+            # the corresponding tensor symbols to the new hyperedge.
+            edge = dequeue!(q)
+            tensors = tn.bond_map[edge]
+            hyperedges[end] = union(hyperedges[end], tensors)
+
+            # Check if the neighbouring edges, of the edge just added to the new hyperedge, 
+            # belong to the same hyperedge. If they do, add them to the queue.
+            for tensor_symbol in tensors
+                tensor = tn.tensor_map[tensor_symbol]
+                i = findfirst(group -> edge in tensor.indices[group], tensor.hyper_indices)
+                if !(i === nothing)
+                    # Create an array of neighbouring edges not yet assigned to the 
+                    # hyperedge
+                    connected_edges = Array{Index, 1}()
+                    for j in tensor.hyper_indices[i]
+                        index = tensor.indices[j]
+                        if !(index == edge) && index in edges
+                            push!(connected_edges, index)
+                        end
+                    end
+                    
+                    # Add these edges to the queue where they'll be assigned to the new 
+                    # hyperedge and remove them from the array of edges not yet assigned to
+                    # a hyperedge.
+                    for e in connected_edges enqueue!(q, e) end
+                    setdiff!(edges, connected_edges)
+                end
+            end
+        end
+    end
+    hyperedges
 end
