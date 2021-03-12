@@ -3,23 +3,43 @@ using ITensors
 using QXTn
 
 # TensorNetwork struct and public functions
-export next_tensor_id
-export TensorNetwork, bonds, simple_contraction, simple_contraction!, tensor_data, neighbours
+export next_tensor_id!
+export TensorNetwork, bonds, simple_contraction, simple_contraction!, neighbours
 export decompose_tensor!, replace_with_svd!
 export contract_tn!, contract_pair!, replace_tensor_symbol!, contract_ncon_indices
 export get_hyperedges
 
-const qxsim_ids = Dict{Symbol, Int64}(:tensor_id => 0)
-@noinline next_tensor_id() = begin qxsim_ids[:tensor_id] += 1; Symbol("t$(qxsim_ids[:tensor_id])") end
+# const qxsim_ids = Dict{Symbol, Int64}(:tensor_id => 0)
+# @noinline next_tensor_id() = begin qxsim_ids[:tensor_id] += 1; Symbol("t$(qxsim_ids[:tensor_id])") end
 
 """Tensor network data-structure"""
 mutable struct TensorNetwork
     tensor_map::OrderedDict{Symbol, QXTensor}
     bond_map::OrderedDict{Index, Vector{Symbol}}
+    next_id::Int64
 end
 
 # constructors
-TensorNetwork() = TensorNetwork(OrderedDict{Symbol, QXTensor}(), OrderedDict{Index, Vector{Symbol}}())
+TensorNetwork() = TensorNetwork(OrderedDict{Symbol, QXTensor}(), OrderedDict{Index, Vector{Symbol}}(), 1)
+
+    # """
+    #     TensorNetwork(tensor_map::OrderedDict{Symbol, QXTensor}, bond_map::OrderedDict{Index, Vector{Symbol}})
+
+    # Constructor which finds the highest index already in use and uses this to set the next id field
+    # """
+    # function TensorNetwork(tensor_map::OrderedDict{Symbol, QXTensor}, bond_map::OrderedDict{Index, Vector{Symbol}})
+    #     next_id = 1
+    #     for s in keys(tensor_map)
+    #         m = match(r"t([0-9*])", String(s))
+    #         if m !== nothing
+    #             val = parse(Int64, m[1])
+    #             if val >= next_id
+    #                 next_id = val + 1
+    #             end
+    #         end
+    #     end
+    #     TensorNetwork(tensor_map, bond_map, next_id)
+    # end
 
 """
     TensorNetwork(array::Vector{<: QXTensor})
@@ -29,8 +49,10 @@ Outer constructor to create a tensor network object from an array of ITensor obj
 function TensorNetwork(array::Vector{<: QXTensor})
     tensor_map = OrderedDict{Symbol, QXTensor}()
     bond_map = OrderedDict{Index, Vector{Symbol}}()
+    next_id = 1
     for (i, tensor) in enumerate(array)
-        tensor_id = next_tensor_id()
+        tensor_id = Symbol("t$(next_id)")
+        next_id += 1
         tensor_map[tensor_id] = tensor
         for bond in inds(tensor)
             if haskey(bond_map, bond)
@@ -40,10 +62,10 @@ function TensorNetwork(array::Vector{<: QXTensor})
             end
         end
     end
-    TensorNetwork(tensor_map, bond_map)
+    TensorNetwork(tensor_map, bond_map, next_id)
 end
 
-Base.copy(tn::TensorNetwork) = TensorNetwork(copy(tn.tensor_map), copy(tn.bond_map))
+Base.copy(tn::TensorNetwork) = TensorNetwork(deepcopy(tn.tensor_map), deepcopy(tn.bond_map), tn.next_id)
 Base.length(tn::TensorNetwork) = length(tn.tensor_map)
 Base.values(tn::TensorNetwork) = values(tn.tensor_map)
 Base.iterate(tn::TensorNetwork) = iterate(values(tn))
@@ -56,6 +78,7 @@ Base.getindex(tn::TensorNetwork, i::T) where T <: Index = tn.bond_map[i]
 Base.haskey(tn::TensorNetwork, i::T) where T <: Index = haskey(tn.bond_map, i)
 Base.show(io::IO, ::MIME"text/plain", tn::TensorNetwork) = print(io, "TensorNetwork(tensors => $(length(tn)), bonds => $(length(bonds(tn))))")
 
+next_tensor_id!(tn::TensorNetwork) = begin tn.next_id += 1; return Symbol("t$(tn.next_id - 1)") end
 bonds(tn::TensorNetwork) = keys(tn.bond_map)
 tensor_data(tn::TensorNetwork, i::Symbol) = tensor_data(tn.tensor_map[i])
 
@@ -76,28 +99,11 @@ end
 Join two networks together
 """
 function Base.merge(a::TensorNetwork, b::TensorNetwork)
-    tensor_map = merge(a.tensor_map, b.tensor_map)
-    bond_map = OrderedDict{Index, Vector{Symbol}}()
-    for (tid, tensor) in pairs(tensor_map)
-        for bond in inds(tensor)
-            if !haskey(bond_map, bond)
-                bond_map[bond] = [tid]
-            else
-                push!(bond_map[bond], tid)
-            end
-        end
+    c = copy(a)
+    for b_tensor in b
+        push!(c, b_tensor)
     end
-    c = TensorNetwork(tensor_map, bond_map)
-
-end
-
-"""
-    tensor_data(tensor::QXTensor)
-
-Get the data associated with given tensor
-"""
-function tensor_data(tensor::QXTensor)
-    reshape(convert(Array, store(tensor)), Tuple([dim(x) for x in inds(tensor)]))
+    c
 end
 
 """
@@ -118,7 +124,7 @@ function Base.push!(tn::TensorNetwork,
                     tid::Union{Nothing, Symbol}=nothing) where {T, N}
     @assert size(data) == Tuple(dim.(indices))
     tensor = QXTensor(data, indices)
-    if tid === nothing tid = next_tensor_id() end
+    if tid === nothing tid = next_tensor_id!(tn) end
     @assert !(tid in keys(tn))
     tn.tensor_map[tid] = tensor
     for bond in indices
@@ -145,7 +151,7 @@ generated if one is not set.
 function Base.push!(tn::TensorNetwork,
                     tensor::QXTensor;
                     tid::Union{Nothing, Symbol}=nothing) where {N}
-    if tid === nothing tid = next_tensor_id() end
+    if tid === nothing tid = next_tensor_id!(tn) end
     # TODO: It might be a good idea to assert tid doesn't already exist in tn.
     tn.tensor_map[tid] = tensor
     for bond in inds(tensor)
@@ -198,7 +204,7 @@ function contract_pair!(tn::TensorNetwork, A_id::Symbol, B_id::Symbol, C_id::Sym
     # Get and contract the tensors A and B to create tensor C.
     A = tn.tensor_map[A_id]
     B = tn.tensor_map[B_id]
-    C_id == :_ && (C_id = next_tensor_id())
+    C_id == :_ && (C_id = next_tensor_id!(tn))
     C = contract_tensors(A, B, mock=mock)
 
     # Remove the contracted indices from the bond map in tn. Also, replace all references
@@ -311,7 +317,7 @@ function Base.delete!(tn::TensorNetwork, tensor_id::Symbol)
     tensor = tn.tensor_map[tensor_id]
     for index in inds(tensor)
         # remove tensor_id from tn.bond_map[index]
-        filter!(id -> id ≠ tensor_id, tn.bond_map[index])        
+        filter!(id -> id ≠ tensor_id, tn.bond_map[index])
     end
     delete!(tn.tensor_map, tensor_id)
 end
@@ -413,7 +419,6 @@ function get_hyperedges(tn::TensorNetwork)::Array{Array{Symbol, 1}, 1}
                             push!(connected_edges, index)
                         end
                     end
-                    
                     # Add these edges to the queue where they'll be assigned to the new 
                     # hyperedge and remove them from the array of edges not yet assigned to
                     # a hyperedge.

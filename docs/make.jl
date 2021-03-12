@@ -1,5 +1,6 @@
 using QXTn, Documenter
 
+DocMeta.setdocmeta!(QXTn, :DocTestSetup, :(using QXTn); recursive=true)
 makedocs(;
     modules=[QXTn],
     authors="QuantEx team",
@@ -12,6 +13,8 @@ makedocs(;
     ),
     pages=[
         "Home" => "index.md",
+        "Data Structures" => "data_structures.md",
+        "LICENSE" => "license.md"
     ],
 )
 

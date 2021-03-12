@@ -106,7 +106,7 @@ end
 
     # convert again adding input
     tnc = create_test_tnc(no_input=false, no_output=true, decompose=false)
-    @test length(tnc) == 6    
+    @test length(tnc) == 6
 end
 
 @testset "Test simple circuit contraction to verify conversion to circuit working" begin
@@ -187,12 +187,12 @@ end
     push!(tnc, [3], QXTn.Gates.h(); decompose=false)
     @assert length(tnc.tn.bond_map) == 9
 
-    # For a tn with no diagonal tensors, each hyperedge consists of a single edge. 
+    # For a tn with no diagonal tensors, each hyperedge consists of a single edge.
     hyperedges = get_hyperedges(tnc)
     @test Set(hyperedges) == Set(values(tnc.tn.bond_map))
 
     # Check if there are exactly 6 hyperedges found in the GHZ circuit, with 2 hyperedges
-    # containing 4 tensors and 4 hyperedges containing 2 tensors. 
+    # containing 4 tensors and 4 hyperedges containing 2 tensors.
     tnc =  create_test_tnc(no_input=false, no_output=false, decompose=true)
     hyperedges = get_hyperedges(tnc)
     @test length(hyperedges) == 6

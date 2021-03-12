@@ -27,3 +27,19 @@ using LinearAlgebra
     @test QXTn.find_hyper_edges(B) == [[1, 2]]
     @test QXTn.find_hyper_edges(C) == [[2, 3]]
 end
+
+@testset "Test reduce tensor function" begin
+    # first a 2d diagonal tensor
+    A = rand(5)
+    Ar = QXTn.reduce_tensor(Diagonal(A), [[1, 2]])
+    @test Ar == A
+
+    # create a rank 5 tensor from a rank 3 tensor and reduce again
+    A = rand(4, 5, 6)
+    Afull = zeros(4, 5, 4, 5, 6)
+    for i in CartesianIndices(size(A))
+        Afull[i[1], i[2], i[1], i[2], i[3]] = A[i]
+    end
+    Ar = QXTn.reduce_tensor(Afull, [[1, 3], [2, 4]])
+    @test Ar == A
+end

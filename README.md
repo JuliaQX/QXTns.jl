@@ -19,7 +19,7 @@ QXTn is a Julia package and can be installed using Julia's inbuilt package manag
 
 ```
 import Pkg
-Pkg.install("QXTn")
+Pkg.add("QXTn")
 ```
 
 To ensure everything is working, the unittests can be run using

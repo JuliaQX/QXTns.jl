@@ -6,9 +6,9 @@ using LinearAlgebra
 Tensor data structure for representing tensors and keeping track of hyper indices.
 """
 
-export QXTensor, Index, hyperindices, contract_tensors
+export QXTensor, Index, hyperindices, contract_tensors, tensor_data
 
-"""Datastructure representing a tensor"""
+"""Datastructure representing tensors"""
 struct QXTensor
     rank::Int64
     indices::Array{<:Index}
@@ -26,7 +26,7 @@ ITensors.inds(a::QXTensor) = a.indices
 ITensors.store(a::QXTensor) = a.storage
 
 """
-    QXTensor(a::T) where T <: Number 
+    QXTensor(a::T) where T <: Number
 
 
 QXTensor constructor which creates a new instance of QXTensor corresponding to a scalar
@@ -56,7 +56,7 @@ end
 """
     QXTensor(indices::Array{<:Index, 1})
 
-QXTensor constructor to create an instance of QXTensor with the given indices and 
+QXTensor constructor to create an instance of QXTensor with the given indices and
 will use MockTensor for the data storage.
 """
 function QXTensor(indices::Array{<:Index, 1})
@@ -64,16 +64,16 @@ function QXTensor(indices::Array{<:Index, 1})
 end
 
 """
-    QXTensor(data::AbstractArray{Elt, N}, 
-             indices::Array{<:Index, 1}; 
+    QXTensor(data::AbstractArray{Elt, N},
+             indices::Array{<:Index, 1};
              diagonal_check::Bool=true) where {Elt, N}
 
 Constructor to create a QXTensor instance using the given data and indices. If
 diagonal_check is true, it will automaticallly check which indices are hyper indices
 and record in the hyper_indices field.
 """
-function QXTensor(data::AbstractArray{Elt, N}, 
-                  indices::Array{<:Index, 1}; 
+function QXTensor(data::AbstractArray{Elt, N},
+                  indices::Array{<:Index, 1};
                   diagonal_check::Bool=true) where {Elt, N}
     # if it is diagonal just expand to full dense format for now
     # if data isa NDTensors.Diag
@@ -112,6 +112,30 @@ function Base.convert(::Type{QXTensor}, t::ITensor{N}) where N
     QXTensor(store(t), collect(inds(t)))
 end
 
+"""
+    tensor_data(tensor::QXTensor; consider_hyperindices::Bool=false)
+
+Get the data associated with the given tensor. If the consider_hyperindices flag is true
+then only the first of the hyper indices are retained. For example for a 5 rank tensor where
+the 2nd and 4th indices form a group of hyper indices, with this option set to true would
+return a rank 4 tensor where the 2nd index
+"""
+function tensor_data(tensor::QXTensor; consider_hyperindices::Bool=false)
+    tensor_dims = Tuple([dim(x) for x in inds(tensor)])
+    data = reshape(convert(Array, store(tensor)), tensor_dims)
+    if consider_hyperindices
+        hi = hyperindices(tensor)
+        # create an array of the ranks from the groups of hyper indices
+        hi_ranks = Array{Int64, 1}[]
+        all_indices = inds(tensor)
+        for group in hi
+            push!(hi_ranks, map(x -> findfirst(y -> y == x, all_indices) ,group))
+        end
+        return reduce_tensor(data, hi_ranks)
+    else
+        return data
+    end
+end
 
 """
     hyperindices(t::QXTensor)
@@ -139,7 +163,7 @@ function contract_hyper_indices(a_indices::Array{<:Index, 1},
                                 a_hyper_indices::Array{<:Array{<:Index, 1}, 1},
                                 b_indices::Array{<:Index, 1},
                                 b_hyper_indices::Array{<:Array{<:Index, 1}, 1})
-    common_indices = intersect(a_indices, b_indices)    
+    common_indices = intersect(a_indices, b_indices)
     remaining_indices = setdiff(union(a_indices, b_indices), common_indices)
     # join hyper groups where there are overlaps. O(N^2) complexity but number of groups should be small
     final_groups = Array{Array{Index, 1}, 1}()
@@ -147,7 +171,7 @@ function contract_hyper_indices(a_indices::Array{<:Index, 1},
     for (i, a_group) in enumerate(a_hyper_indices)
         for (j, b_group) in enumerate(b_hyper_indices)
             if length(intersect(a_group, b_group)) > 0
-                b_found[j] = true        
+                b_found[j] = true
                 remaining_merged = setdiff(union(a_group, b_group), common_indices)
                 if length(remaining_merged) > 1
                     push!(final_groups, remaining_merged)

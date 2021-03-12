@@ -29,7 +29,7 @@ function TensorNetworkCircuit(qubits::Int64)
 end
 
 function Base.copy(tnc::TensorNetworkCircuit)
-    tn = TensorNetwork()    
+    tn = TensorNetwork()
     f = x -> x === nothing ? nothing : push!(tn, tnc[x]; tid=x)
     my_input_tensors = convert(Array{Union{Symbol, Nothing}}, f.(input_tensors(tnc)))
     my_output_tensors = convert(Array{Union{Symbol, Nothing}}, f.(output_tensors(tnc)))
@@ -78,15 +78,15 @@ the qubits it acts on and an array of the matrix elements
 function Base.push!(tnc::TensorNetworkCircuit,
                     qubits::Vector{Int64},
                     data::Array{T, 2};
-                    decompose::Bool=true) where T                  
+                    decompose::Bool=true) where T
     input_indices = tnc.output_indices[qubits]
     tnc.output_indices[qubits] = output_indices = [prime(x) for x in input_indices]
-    if length(qubits) == 1 || !decompose         
+    if length(qubits) == 1 || !decompose
         indices = [output_indices..., input_indices...]
         @assert prod(size(data)) == prod(dim.(indices)) "Data matrix dimension does not match indices"
         data = reshape(data, Tuple(dim.(indices)))
         push!(tnc, indices, data)
-    elseif length(qubits) == 2 && decompose         
+    elseif length(qubits) == 2 && decompose
         data = reshape(data, Tuple([dim.(output_indices)..., dim.(input_indices)...]))
         A, B = decompose_gate(data)
         if size(A)[3] == size(B)[1] == 1
@@ -100,7 +100,7 @@ function Base.push!(tnc::TensorNetworkCircuit,
             b_indices = [virtual_index, output_indices[2], input_indices[2]]
         end
         push!(tnc, a_indices, A)
-        push!(tnc, b_indices, B)    
+        push!(tnc, b_indices, B)
     else
 
         @error("Gates spanning more than two qubits not supported with decomposition yet.")
@@ -145,7 +145,7 @@ function push_output!(tnc::TensorNetworkCircuit, tensor::Array{Elt, 1}, pos::Int
     if tensor_sym !== nothing
         delete!(tnc, tensor_sym)
     end
-    tnc.output_tensors[pos] = push!(tnc, [index], tensor; tid=tensor_sym)    
+    tnc.output_tensors[pos] = push!(tnc, [index], tensor; tid=tensor_sym)
 end
 
 """
@@ -163,7 +163,7 @@ end
 
 Function to add output tensors to the circuit
 """
-function add_output!(tnc::TensorNetworkCircuit, output::Union{String, Nothing}=nothing)    
+function add_output!(tnc::TensorNetworkCircuit, output::Union{String, Nothing}=nothing)
     if output === nothing output = "0"^qubits(tnc) end
     [push_output!(tnc, input_output_tensors[output[pos]], pos) for pos in 1:qubits(tnc)]
 end
@@ -172,7 +172,7 @@ contract_tn!(tnc::TensorNetworkCircuit, plan) = contract_tn!(tnc.tn, plan)
 
 contract_tn(tnc::TensorNetworkCircuit, plan) = contract_tn!(copy(tnc), plan)
 
-function decompose_tensor!(tnc::TensorNetworkCircuit, args...; kwargs...)                            
+function decompose_tensor!(tnc::TensorNetworkCircuit, args...; kwargs...)
     decompose_tensor!(tnc.tn, args...; kwargs...)
 end
 

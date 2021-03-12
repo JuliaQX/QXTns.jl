@@ -24,6 +24,8 @@ using LinearAlgebra
 end
 
 @testset "Test contraction of hyper indices" begin
+    # we create two sets of indices and identify subsets of indices that are hyper indices
+    # we then contract over these sets to ensure the results set has the expected hyper indices
     as = [Index(2), Index(2), Index(2), Index(2)]
     a_hyper_indices = [[as[1], as[3]]]
     bs = [as[3], as[4], Index(2), Index(2)]
@@ -38,4 +40,24 @@ end
     b_hyper_indices = [[bs[1], bs[3]], [bs[2], bs[4]]]
 
     @test QXTn.contract_hyper_indices(as, a_hyper_indices, bs, b_hyper_indices) == [[as[1], bs[3]], [as[2], bs[4]]]
+end
+
+@testset "Test tensor_data when considering hyperedges" begin
+    # test a diagonal
+    data = Diagonal(ones(4))
+    indices = [Index(4), Index(4)]
+    a = QXTensor(data, indices)
+    @test tensor_data(a, consider_hyperindices=true) == ones(4)
+
+    # test a rank 4 tensor with 2 sets of hyper edges
+    data = reshape(Diagonal(ones(4)), (2, 2, 2 ,2))
+    indices = [Index(2), Index(2), Index(2), Index(2)]
+    a = QXTensor(data, indices)
+    @test tensor_data(a, consider_hyperindices=true) == ones(2, 2)
+
+    # test a 2x2x2 tensor with single group of hyper edges include all ranks
+    data = zeros(2, 2, 2)
+    for i in 1:2 data[i, i, i] = 1 end
+    a = QXTensor(data, [Index(2), Index(2), Index(2)])
+    @test tensor_data(a, consider_hyperindices=true) == ones(2)
 end

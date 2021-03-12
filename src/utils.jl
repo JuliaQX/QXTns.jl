@@ -51,7 +51,7 @@ function find_hyper_edges(A::AbstractArray{Elt, N}) where {Elt, N}
             for j in i+1:N
                 if isdiagonal(A, Pair(i, j))
                     # check if there is overlap iwth any existing groups
-                    if any(x -> length(intersect(x, (i, j))) > 0, groups)                        
+                    if any(x -> length(intersect(x, (i, j))) > 0, groups)
                         # groups with intersections
                         igroups = [x for x in groups if length(intersect(x, (i, j))) > 0]
                         # filter these from main groups list
@@ -69,7 +69,6 @@ function find_hyper_edges(A::AbstractArray{Elt, N}) where {Elt, N}
     Array{Array{Int64, 1}, 1}()
 end
 
-
 """
     isdiagonal(A::AbstractArray{Elt, N}, Pair{Int64, Int64}) where {Elt, N}
 
@@ -83,9 +82,8 @@ function isdiagonal(A::AbstractArray{Elt, N}, p::Pair{Int64, Int64}) where {Elt,
     A = permutedims(A, po)
     d = size(A)
     A = reshape(A, (d[1], d[2], prod(d[3:end])))
-    all(x -> isdiagonal(A[:, :, x]), 1:prod(d[3:end]))    
+    all(x -> isdiagonal(A[:, :, x]), 1:prod(d[3:end]))
 end
-
 
 """
     isdiagonal(A::AbstractArray{Elt, 2}) where Elt
@@ -98,4 +96,50 @@ function isdiagonal(A::AbstractArray{Elt, 2}) where Elt
     else
         all([abs(A[i, j]) < eps(real(eltype(A))) for i in 1:size(A)[1], j in 1:size(A)[2] if i != j])
     end
+end
+
+"""
+    reduce_tensor(A::AbstractArray{Elt, N}, hyper_index_groups::Array{Int64, 1})
+
+Function to reduce the dimension of the given tensor assuming the given hyper edge groups. For example a diagonal
+matrix will have a single hyper edge group with both indices [1, 2]
+
+```jldoctest
+julia> QXTn.reduce_tensor([[1, 0] [0, 2]], [[1, 2]])
+2-element Array{Int64,1}:
+ 1
+ 2
+```
+"""
+function reduce_tensor(A::AbstractArray{Elt, N}, hyper_index_groups::Array{Array{Int64, 1}, 1}) where {Elt, N}
+    tensor_dims = size(A)
+    index_map = Dict{Int64, Int64}(x => x for x in 1:N)
+    for group in hyper_index_groups
+        @assert length(group) >= 2 "Not all hyper edge groups have minimum dimension 2"
+        ref = group[1]
+        for j in group[2:end]
+            index_map[j] = ref
+        end
+    end
+    remaining_dims = unique(sort(collect(values(index_map))))
+    remaining_dim_sizes = [tensor_dims[x] for x in remaining_dims]
+
+    # create array to store reduced tensor with correct dimensions
+    inverse_index_map = Dict{Int64, Array{Int64, 1}}(x => Int64[] for x in remaining_dims)
+    for (k, v) in pairs(index_map)
+        push!(inverse_index_map[v], k)
+    end
+    function map_reduced_indices_to_full(reduced_index::Tuple)
+        full_index_array = zeros(Int64, N)
+        for (dim, val) in enumerate(reduced_index)
+            full_dim = remaining_dims[dim]
+            full_index_array[inverse_index_map[full_dim]] .= val
+        end
+        full_index_array
+    end
+    Ar = zeros(Elt, remaining_dim_sizes...)
+    for i in CartesianIndices(Tuple(remaining_dim_sizes))
+        Ar[i] = A[map_reduced_indices_to_full(Tuple(i))...]
+    end
+    Ar
 end
