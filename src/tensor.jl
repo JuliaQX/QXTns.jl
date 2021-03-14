@@ -172,11 +172,12 @@ function contract_hyper_indices(a_indices::Array{<:Index, 1},
         for (j, b_group) in enumerate(b_hyper_indices)
             if length(intersect(a_group, b_group)) > 0
                 b_found[j] = true
-                remaining_merged = setdiff(union(a_group, b_group), common_indices)
-                if length(remaining_merged) > 1
-                    push!(final_groups, remaining_merged)
-                end
+                a_group = union(a_group, b_group)
             end
+        end
+        remaining = setdiff(a_group, common_indices)
+        if length(remaining) > 1
+            push!(final_groups, remaining)
         end
     end
     # add any groups in b that have not been added and are still present

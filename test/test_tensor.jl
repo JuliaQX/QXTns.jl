@@ -40,6 +40,15 @@ end
     b_hyper_indices = [[bs[1], bs[3]], [bs[2], bs[4]]]
 
     @test QXTn.contract_hyper_indices(as, a_hyper_indices, bs, b_hyper_indices) == [[as[1], bs[3]], [as[2], bs[4]]]
+
+    # next an example where the first tensor will have a group of hyper indices remaining
+    # but the second tensor won't
+    as = [Index(2), Index(2), Index(2), Index(2), Index(5)]
+    a_hyper_indices = [[as[1], as[2], as[3]]]
+    bs = [as[1], Index(4), Index(5), as[4]]
+    b_hyper_indices = [[bs[3], bs[4]]]
+
+    @test QXTn.contract_hyper_indices(as, a_hyper_indices, bs, b_hyper_indices) == [[as[2], as[3]]]
 end
 
 @testset "Test tensor_data when considering hyperedges" begin

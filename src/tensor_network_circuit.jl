@@ -38,6 +38,7 @@ function Base.copy(tnc::TensorNetworkCircuit)
             push!(tn, tnc[x]; tid=x)
         end
     end
+    tn.next_id = tnc.tn.next_id
 
     TensorNetworkCircuit(qubits(tnc),
                          copy(input_indices(tnc)),
