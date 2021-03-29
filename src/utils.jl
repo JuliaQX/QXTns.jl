@@ -1,5 +1,7 @@
 using LinearAlgebra
 
+export reduce_tensor
+
 """
     function decompose_gate!(gate_data::Array{<:Number, 4},
                              threshold::AbstractFloat=1e-15)
