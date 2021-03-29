@@ -53,7 +53,7 @@ jobs:
             Pkg.instantiate()'
       - run: |
           julia --project=docs -e '
-            using Documenter: doctest
+            using Documenter
             using QXTn
             DocMeta.setdocmeta!(QXTn, :DocTestSetup, :(using QXTn); recursive=true)
             doctest(QXTn)'
