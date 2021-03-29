@@ -1,14 +1,15 @@
-using QXTn, Documenter
+using QXTns, Documenter
 
-DocMeta.setdocmeta!(QXTn, :DocTestSetup, :(using QXTn); recursive=true)
+DocMeta.setdocmeta!(QXTns, :DocTestSetup, :(using QXTns); recursive=true)
+doctest(QXTns)
 makedocs(;
-    modules=[QXTn],
+    modules=[QXTns],
     authors="QuantEx team",
-    repo="https://github.com/JuliaQX/QXTn.jl/blob/{commit}{path}#L{line}",
-    sitename="QXTn.jl",
+    repo="https://github.com/JuliaQX/QXTns.jl/blob/{commit}{path}#L{line}",
+    sitename="QXTns.jl",
     format=Documenter.HTML(;
         prettyurls=get(ENV, "CI", "false") == "true",
-        canonical="https://JuliaQX.github.io/QXTn.jl",
+        canonical="https://JuliaQX.github.io/QXTns.jl",
         assets=String[],
     ),
     pages=[
@@ -19,5 +20,5 @@ makedocs(;
 )
 
 deploydocs(;
-    repo="github.com/JuliaQX/QXTn.jl",
+    repo="github.com/JuliaQX/QXTns.jl",
 )

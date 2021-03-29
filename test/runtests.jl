@@ -1,8 +1,8 @@
-using QXTn
+using QXTns
 using Test
 using TestSetExtensions
 
 
-@testset ExtendedTestSet "QXTn.jl" begin
+@testset ExtendedTestSet "QXTns.jl" begin
     @includetests ARGS
 end

@@ -1,4 +1,4 @@
-module QXTn
+module QXTns
 
 using ITensors
 

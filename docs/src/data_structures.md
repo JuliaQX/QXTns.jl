@@ -1,6 +1,6 @@
 # Data Structures
 
-QXTn has data structures for representing tensors, tensor networks and tensor network circuits. Here we
+QXTns has data structures for representing tensors, tensor networks and tensor network circuits. Here we
 go through each and show examples and features.
 
 ## QXTensor
