@@ -1,11 +1,11 @@
-# QXTn
+# QXTns
 
-[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://JuliaQX.github.io/QXTn.jl/stable)
-[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://JuliaQX.github.io/QXTn.jl/dev)
-[![Build Status](https://github.com/JuliaQX/QXTn.jl/workflows/CI/badge.svg)](https://github.com/JuliaQX/QXTn.jl/actions)
-[![Coverage](https://codecov.io/gh/JuliaQX/QXTn.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/JuliaQX/QXTn.jl)
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://JuliaQX.github.io/QXTns.jl/stable)
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://JuliaQX.github.io/QXTns.jl/dev)
+[![Build Status](https://github.com/JuliaQX/QXTns.jl/workflows/CI/badge.svg)](https://github.com/JuliaQX/QXTns.jl/actions)
+[![Coverage](https://codecov.io/gh/JuliaQX/QXTns.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/JuliaQX/QXTns.jl)
 
-QXTn is a Julia package with data structures and utilities for manipulating tensor networks.
+QXTns is a Julia package with data structures and utilities for manipulating tensor networks.
 As well as generic tensor network data structure, it also contains specific data structures
 for handling tensor networks derived from quantum circuits. It was developed as part of the QuantEx project, one of the individual software projects of WP8 of PRACE 6IP.
 
@@ -13,11 +13,11 @@ It uses some features from [ITensors](https://github.com/ITensor/ITensors.jl) an
 
 ## Installation
 
-QXTn is a Julia package and can be installed using Julia's inbuilt package manager from the Julia REPL using.
+QXTns is a Julia package and can be installed using Julia's inbuilt package manager from the Julia REPL using.
 
 ```
 import Pkg
-Pkg.add("QXTn")
+Pkg.add("QXTns")
 ```
 
 To ensure everything is working, the unittests can be run using
@@ -31,7 +31,7 @@ import Pkg; Pkg.test()
 An example of creating a simple tensor network and contracting.
 
 ```
-using QXTn
+using QXTns
 
 tn = TensorNetwork()
 
@@ -58,7 +58,7 @@ Contributions from users are welcome and we encourage users to open issues and s
 
 ## Building documentation
 
-QXTn.jl uses [Documenter.jl](https://juliadocs.github.io/Documenter.jl/stable/) to generate documentation. To build the documentation locally run the following from the root folder.
+QXTns.jl uses [Documenter.jl](https://juliadocs.github.io/Documenter.jl/stable/) to generate documentation. To build the documentation locally run the following from the root folder.
 
 The first time it is will be necessary to instantiate the environment to install dependencies
 

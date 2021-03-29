@@ -12,7 +12,7 @@ using LinearAlgebra
     @test size(a) == (4, 4)
     @test hyperindices(a) == [indices]
 
-    data = reshape(QXTn.Gates.cx(), (2, 2, 2 ,2))
+    data = reshape(QXTns.Gates.cx(), (2, 2, 2 ,2))
     indices = [Index(2), Index(2), Index(2), Index(2)]
     a = QXTensor(data, indices)
     @test hyperindices(a) == [indices[[2, 4]]]
@@ -31,7 +31,7 @@ end
     bs = [as[3], as[4], Index(2), Index(2)]
     b_hyper_indices = [[bs[1], bs[3]]]
 
-    @test QXTn.contract_hyper_indices(as, a_hyper_indices, bs, b_hyper_indices) == [[as[1], bs[3]]]
+    @test QXTns.contract_hyper_indices(as, a_hyper_indices, bs, b_hyper_indices) == [[as[1], bs[3]]]
 
     # now an example with two sets of hyper indices
     as = [Index(2), Index(2), Index(2), Index(2)]
@@ -39,7 +39,7 @@ end
     bs = [as[3], as[4], Index(2), Index(2)]
     b_hyper_indices = [[bs[1], bs[3]], [bs[2], bs[4]]]
 
-    @test QXTn.contract_hyper_indices(as, a_hyper_indices, bs, b_hyper_indices) == [[as[1], bs[3]], [as[2], bs[4]]]
+    @test QXTns.contract_hyper_indices(as, a_hyper_indices, bs, b_hyper_indices) == [[as[1], bs[3]], [as[2], bs[4]]]
 
     # next an example where the first tensor will have a group of hyper indices remaining
     # but the second tensor won't
@@ -48,7 +48,7 @@ end
     bs = [as[1], Index(4), Index(5), as[4]]
     b_hyper_indices = [[bs[3], bs[4]]]
 
-    @test QXTn.contract_hyper_indices(as, a_hyper_indices, bs, b_hyper_indices) == [[as[2], as[3]]]
+    @test QXTns.contract_hyper_indices(as, a_hyper_indices, bs, b_hyper_indices) == [[as[2], as[3]]]
 end
 
 @testset "Test tensor_data when considering hyperedges" begin

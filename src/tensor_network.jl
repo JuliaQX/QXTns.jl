@@ -1,6 +1,6 @@
 using DataStructures
 using ITensors
-using QXTn
+using QXTns
 
 # TensorNetwork struct and public functions
 export next_tensor_id!
@@ -115,7 +115,7 @@ end
 Function to add a tensor to the tensor network.
 
 # Keywords
-- `tid::Union{Nothing, Symbol}=nothing`: the id for the new tensor in `tn`. An id is 
+- `tid::Union{Nothing, Symbol}=nothing`: the id for the new tensor in `tn`. An id is
 generated if one is not set.
 """
 function Base.push!(tn::TensorNetwork,
@@ -145,7 +145,7 @@ end
 Function to add a tensor to the tensor network.
 
 # Keywords
-- `tid::Union{Nothing, Symbol}=nothing`: the id for the new tensor in `tn`. An id is 
+- `tid::Union{Nothing, Symbol}=nothing`: the id for the new tensor in `tn`. An id is
 generated if one is not set.
 """
 function Base.push!(tn::TensorNetwork,
@@ -199,7 +199,7 @@ new tensor will be a mock tensor with the right dimensions but without the actua
 The resulting tensor is stored in `tn` under the symbol `C_id` if one is provided, otherwise
 a new id is created for it.
 """
-function contract_pair!(tn::TensorNetwork, A_id::Symbol, B_id::Symbol, C_id::Symbol=:_; 
+function contract_pair!(tn::TensorNetwork, A_id::Symbol, B_id::Symbol, C_id::Symbol=:_;
                         mock::Bool=false)
     # Get and contract the tensors A and B to create tensor C.
     A = tn.tensor_map[A_id]
@@ -274,7 +274,7 @@ end
 
 
 """
-    replace_with_svd!(tn::TensorNetwork, 
+    replace_with_svd!(tn::TensorNetwork,
                       tensor_id::Symbol,
                       left_indices::Array{<:Index, 1};
                       kwargs...)
@@ -289,7 +289,7 @@ the svd is performed.
 - `mindim::Int`: the minimum number of singular values to keep.
 - `cutoff::Float64`: set the desired truncation error of the SVD.
 """
-function replace_with_svd!(tn::TensorNetwork, 
+function replace_with_svd!(tn::TensorNetwork,
                            tensor_id::Symbol,
                            left_indices::Array{<:Index, 1};
                            kwargs...)
@@ -377,7 +377,7 @@ end
 """
     get_hyperedges(tn::TensorNetwork)::Array{Array{Symbol, 1}, 1}
 
-Return an array of hyperedges in the given tensornetwork `tn`. 
+Return an array of hyperedges in the given tensornetwork `tn`.
 
 Hyperedges are represented as arrays of tensor symbols.
 """
@@ -385,7 +385,7 @@ function get_hyperedges(tn::TensorNetwork)::Array{Array{Symbol, 1}, 1}
     # hyperedges are represented as arrays of tensor symbols.
     hyperedges = Array{Array{Symbol, 1}, 1}()
 
-    # Create an array of edges in the network which have not yet been assigned to a 
+    # Create an array of edges in the network which have not yet been assigned to a
     # hyperedge. Also create a queue which will be used to assign edges to hyperedges.
     edges = collect(bonds(tn))
     q = Queue{Index}()
@@ -398,19 +398,19 @@ function get_hyperedges(tn::TensorNetwork)::Array{Array{Symbol, 1}, 1}
         enqueue!(q, pop!(edges))
 
         while !isempty(q)
-            # While the queue is not empty, take the next edge in the queue and append 
+            # While the queue is not empty, take the next edge in the queue and append
             # the corresponding tensor symbols to the new hyperedge.
             edge = dequeue!(q)
             tensors = tn.bond_map[edge]
             hyperedges[end] = union(hyperedges[end], tensors)
 
-            # Check if the neighbouring edges, of the edge just added to the new hyperedge, 
+            # Check if the neighbouring edges, of the edge just added to the new hyperedge,
             # belong to the same hyperedge. If they do, add them to the queue.
             for tensor_symbol in tensors
                 tensor = tn.tensor_map[tensor_symbol]
                 i = findfirst(group -> edge in tensor.indices[group], tensor.hyper_indices)
                 if !(i === nothing)
-                    # Create an array of neighbouring edges not yet assigned to the 
+                    # Create an array of neighbouring edges not yet assigned to the
                     # hyperedge
                     connected_edges = Array{Index, 1}()
                     for j in tensor.hyper_indices[i]
@@ -419,7 +419,7 @@ function get_hyperedges(tn::TensorNetwork)::Array{Array{Symbol, 1}, 1}
                             push!(connected_edges, index)
                         end
                     end
-                    # Add these edges to the queue where they'll be assigned to the new 
+                    # Add these edges to the queue where they'll be assigned to the new
                     # hyperedge and remove them from the array of edges not yet assigned to
                     # a hyperedge.
                     for e in connected_edges enqueue!(q, e) end

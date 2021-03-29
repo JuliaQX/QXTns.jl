@@ -105,7 +105,7 @@ Function to reduce the dimension of the given tensor assuming the given hyper ed
 matrix will have a single hyper edge group with both indices [1, 2]
 
 ```jldoctest
-julia> QXTn.reduce_tensor([[1, 0] [0, 2]], [[1, 2]])
+julia> reduce_tensor([[1, 0] [0, 2]], [[1, 2]])
 2-element Vector{Int64}:
  1
  2
