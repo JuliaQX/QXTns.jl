@@ -55,6 +55,7 @@ jobs:
           julia --project=docs -e '
             using Documenter: doctest
             using QXTn
+            DocMeta.setdocmeta!(QXTn, :DocTestSetup, :(using QXTn); recursive=true)
             doctest(QXTn)'
       - run: julia --project=docs docs/make.jl
         env:
