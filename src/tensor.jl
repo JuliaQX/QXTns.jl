@@ -163,32 +163,33 @@ function contract_hyper_indices(a_indices::Array{<:Index, 1},
                                 a_hyper_indices::Array{<:Array{<:Index, 1}, 1},
                                 b_indices::Array{<:Index, 1},
                                 b_hyper_indices::Array{<:Array{<:Index, 1}, 1})
+
+    ag = [a_hyper_indices..., b_hyper_indices...]
+    fg = Array{Array{Index, 1}, 1}()
+
+    # @show all_groups
+    while length(ag) > 1
+        overlapping = findall(x -> length(intersect(ag[1], x)) > 0, ag[2:end]) .+ 1 # add one for slice offset
+        if length(overlapping) == 0
+            push!(fg, ag[1])
+            popat!(ag, 1)
+        end
+        for i in sort(overlapping, rev=true)
+            ag[1] = union(ag[1], ag[i])
+            popat!(ag, i)
+        end
+    end
+    if length(ag) == 1
+        push!(fg, ag[1])
+    end
+
+    # now check that final groups still exist after contraction
     common_indices = intersect(a_indices, b_indices)
     remaining_indices = setdiff(union(a_indices, b_indices), common_indices)
-    # join hyper groups where there are overlaps. O(N^2) complexity but number of groups should be small
-    final_groups = Array{Array{Index, 1}, 1}()
-    b_found = zeros(Bool, length(b_hyper_indices))
-    for (i, a_group) in enumerate(a_hyper_indices)
-        for (j, b_group) in enumerate(b_hyper_indices)
-            if length(intersect(a_group, b_group)) > 0
-                b_found[j] = true
-                a_group = union(a_group, b_group)
-            end
-        end
-        remaining = setdiff(a_group, common_indices)
-        if length(remaining) > 1
-            push!(final_groups, remaining)
-        end
-    end
-    # add any groups in b that have not been added and are still present
-    for i in findall(x -> !x, b_found)
-        b_group = b_hyper_indices[i]
-        if length(setdiff(b_group, common_indices)) > 1
-            push!(final_groups, setdiff(b_group, common_indices))
-        end
-    end
-    final_groups
+    fg = map(x -> setdiff(x, common_indices), fg)
+    filter(x -> length(x) > 1, fg)
 end
+
 
 
 """

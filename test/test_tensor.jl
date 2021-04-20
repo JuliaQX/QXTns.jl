@@ -49,6 +49,14 @@ end
     b_hyper_indices = [[bs[3], bs[4]]]
 
     @test QXTns.contract_hyper_indices(as, a_hyper_indices, bs, b_hyper_indices) == [[as[2], as[3]]]
+
+    # next an example where the first tensor has two groups linked with group from second tensor
+    as = [Index(2), Index(2), Index(2), Index(2)]
+    a_hyper_indices = [[as[1], as[2]], [as[3], as[4]]]
+    bs = [as[1], as[4]]
+    b_hyper_indices = [[bs[1], bs[2]]]
+
+    @test QXTns.contract_hyper_indices(as, a_hyper_indices, bs, b_hyper_indices) == [[as[2], as[3]]]
 end
 
 @testset "Test tensor_data when considering hyperedges" begin
