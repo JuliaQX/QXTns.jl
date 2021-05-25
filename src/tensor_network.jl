@@ -7,10 +7,7 @@ export next_tensor_id!
 export TensorNetwork, bonds, simple_contraction, simple_contraction!, neighbours
 export decompose_tensor!, replace_with_svd!
 export contract_tn!, contract_pair!, replace_tensor_symbol!, contract_ncon_indices
-export get_hyperedges
-
-# const qxsim_ids = Dict{Symbol, Int64}(:tensor_id => 0)
-# @noinline next_tensor_id() = begin qxsim_ids[:tensor_id] += 1; Symbol("t$(qxsim_ids[:tensor_id])") end
+export get_hyperedges, disable_hyperindices!, find_connected_indices
 
 """Tensor network data-structure"""
 mutable struct TensorNetwork
@@ -22,25 +19,6 @@ end
 # constructors
 TensorNetwork() = TensorNetwork(OrderedDict{Symbol, QXTensor}(), OrderedDict{Index, Vector{Symbol}}(), 1)
 
-    # """
-    #     TensorNetwork(tensor_map::OrderedDict{Symbol, QXTensor}, bond_map::OrderedDict{Index, Vector{Symbol}})
-
-    # Constructor which finds the highest index already in use and uses this to set the next id field
-    # """
-    # function TensorNetwork(tensor_map::OrderedDict{Symbol, QXTensor}, bond_map::OrderedDict{Index, Vector{Symbol}})
-    #     next_id = 1
-    #     for s in keys(tensor_map)
-    #         m = match(r"t([0-9*])", String(s))
-    #         if m !== nothing
-    #             val = parse(Int64, m[1])
-    #             if val >= next_id
-    #                 next_id = val + 1
-    #             end
-    #         end
-    #     end
-    #     TensorNetwork(tensor_map, bond_map, next_id)
-    # end
-
 """
     TensorNetwork(array::Vector{<: QXTensor})
 
@@ -50,11 +28,11 @@ function TensorNetwork(array::Vector{<: QXTensor})
     tensor_map = OrderedDict{Symbol, QXTensor}()
     bond_map = OrderedDict{Index, Vector{Symbol}}()
     next_id = 1
-    for (i, tensor) in enumerate(array)
+    for t in array
         tensor_id = Symbol("t$(next_id)")
         next_id += 1
-        tensor_map[tensor_id] = tensor
-        for bond in inds(tensor)
+        tensor_map[tensor_id] = t
+        for bond in inds(t)
             if haskey(bond_map, bond)
                 push!(bond_map[bond], tensor_id)
             else
@@ -80,7 +58,8 @@ Base.show(io::IO, ::MIME"text/plain", tn::TensorNetwork) = print(io, "TensorNetw
 
 next_tensor_id!(tn::TensorNetwork) = begin tn.next_id += 1; return Symbol("t$(tn.next_id - 1)") end
 bonds(tn::TensorNetwork) = keys(tn.bond_map)
-tensor_data(tn::TensorNetwork, i::Symbol) = tensor_data(tn.tensor_map[i])
+tensor_data(tn::TensorNetwork, i::Symbol; kwargs...) = tensor_data(tn.tensor_map[i]; kwargs...)
+disable_hyperindices!(tn) = begin map(t -> filter!(x -> false, t.hyper_indices), tn); return nothing end
 
 """
     neighbours(tn::TensorNetwork, tensor::Symbol)
@@ -140,7 +119,7 @@ end
 """
     push!(tn::TensorNetwork,
           tensor::QXTensor;
-          tid::Union{Nothing, Symbol}=nothing) where {N}
+          tid::Union{Nothing, Symbol}=nothing)
 
 Function to add a tensor to the tensor network.
 
@@ -150,7 +129,7 @@ generated if one is not set.
 """
 function Base.push!(tn::TensorNetwork,
                     tensor::QXTensor;
-                    tid::Union{Nothing, Symbol}=nothing) where {N}
+                    tid::Union{Nothing, Symbol}=nothing)
     if tid === nothing tid = next_tensor_id!(tn) end
     # TODO: It might be a good idea to assert tid doesn't already exist in tn.
     tn.tensor_map[tid] = tensor
@@ -163,7 +142,6 @@ function Base.push!(tn::TensorNetwork,
     end
     tid
 end
-
 
 """
     simple_contraction(tn::TensorNetwork)
@@ -223,7 +201,6 @@ function contract_pair!(tn::TensorNetwork, A_id::Symbol, B_id::Symbol, C_id::Sym
     C_id
 end
 
-
 """
     contract_tn!(tn::TensorNetwork, plan)
 
@@ -239,7 +216,6 @@ function contract_tn!(tn::TensorNetwork, plan::Array{NTuple{3, Symbol}, 1})
     # Contract any disjoint tensors that may remain before returning the result.
     simple_contraction!(tn)
 end
-
 
 """
     decompose_tensor!(tn::TensorNetwork,
@@ -271,7 +247,6 @@ function decompose_tensor!(tn::TensorNetwork,
         return contract_pair!(tn, S_id, U_id), V_id
     end
 end
-
 
 """
     replace_with_svd!(tn::TensorNetwork,
@@ -306,7 +281,6 @@ function replace_with_svd!(tn::TensorNetwork,
     V_id = push!(tn, convert(QXTensor, V))
     U_id, S_id, V_id
 end
-
 
 """
     delete!(tn::TensorNetwork, tensor_id::Symbol)
@@ -429,4 +403,32 @@ function get_hyperedges(tn::TensorNetwork)::Array{Array{Symbol, 1}, 1}
         end
     end
     hyperedges
+end
+
+"""
+    find_connected_indices(tn::TensorNetwork, bond::Index)
+
+Given a tensor network and an index in the network, find all indices that are related via hyper edge
+relations. Involves recurisively checking bonds connected to neighbouring tensors of any newly
+related edges found. Returns an array in all edges in the group including the intial edge.
+"""
+function find_connected_indices(tn::TensorNetwork, bond::Index)
+    tensors_to_visit = Set{Symbol}()
+    push!.([tensors_to_visit], tn[bond])
+    related_edges = Set{Index}([bond])
+    while length(tensors_to_visit) > 0
+        tensor_sym = pop!(tensors_to_visit)
+        for g in hyperindices(tn[tensor_sym])
+            if length(intersect(related_edges, g)) > 0
+                new_edges = setdiff(g, related_edges)
+                for e in new_edges
+                    push!(related_edges, e)
+                    for t in tn[e]
+                        push!(tensors_to_visit, t)
+                    end
+                end
+            end
+        end
+    end
+    collect(related_edges)
 end

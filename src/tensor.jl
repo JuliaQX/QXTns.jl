@@ -156,18 +156,17 @@ end
                            b_indices::Array{<:Index, 1},
                            b_hyper_indices::Array{<:Array{<:Index, 1}, 1})
 
-This function calculates the resulting groups of hyper indices after contracting tensors with the given
-groups of hyper indices.
+This function calculates the resulting groups of hyper indices after contracting tensors
+with the given groups of hyper indices.
 """
 function contract_hyper_indices(a_indices::Array{<:Index, 1},
                                 a_hyper_indices::Array{<:Array{<:Index, 1}, 1},
                                 b_indices::Array{<:Index, 1},
                                 b_hyper_indices::Array{<:Array{<:Index, 1}, 1})
 
-    ag = [a_hyper_indices..., b_hyper_indices...]
-    fg = Array{Array{Index, 1}, 1}()
+    ag = [a_hyper_indices..., b_hyper_indices...] # all groups
+    fg = Array{Array{Index, 1}, 1}() # final groups
 
-    # @show all_groups
     while length(ag) > 1
         overlapping = findall(x -> length(intersect(ag[1], x)) > 0, ag[2:end]) .+ 1 # add one for slice offset
         if length(overlapping) == 0
@@ -185,12 +184,9 @@ function contract_hyper_indices(a_indices::Array{<:Index, 1},
 
     # now check that final groups still exist after contraction
     common_indices = intersect(a_indices, b_indices)
-    remaining_indices = setdiff(union(a_indices, b_indices), common_indices)
     fg = map(x -> setdiff(x, common_indices), fg)
     filter(x -> length(x) > 1, fg)
 end
-
-
 
 """
     contract_tensors(A::QXTensor, B::QXTensor; mock::Bool=false)

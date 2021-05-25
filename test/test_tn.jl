@@ -198,3 +198,52 @@ end
     @test length(hyperedges) == 6
     @test QXTns.counter(length.(hyperedges)) == Dict(4=>2, 2=>4)
 end
+
+@testset "Test disable hyperindices" begin
+    ai = [Index(2) for _ in 1:4]
+    ci = [Index(2) for _ in 1:4]
+    bi = [ai[3], ai[4], ci[1], ci[2]]
+
+    a = QXTensor(ai, [[1,3], [2,4]])
+    b = QXTensor(bi, [[1,3], [2,4]])
+    c = QXTensor(ci, [[1,3], [2,4]])
+
+    tn = TensorNetwork([a, b, c])
+    @test all(map(x -> length(hyperindices(x)) > 0, tn))
+    disable_hyperindices!(tn)
+    @test all(map(x -> length(hyperindices(x)) == 0, tn))
+
+    tn = TensorNetwork()
+    t = QXTensor(Diagonal(ones(4)), [Index(4), Index(4)])
+    sym = push!(tn, t)
+    size(tensor_data(tn, sym)) == (4,4)
+    size(tensor_data(tn, sym, consider_hyperindices=true)) == (4,)
+    disable_hyperindices!(tn)
+    size(tensor_data(tn, sym, consider_hyperindices=true)) == (4,4)
+end
+
+@testset "Test disable hyperindices" begin
+    ai = [Index(2) for _ in 1:4]
+    bi = [ai[3], ai[4], Index(2), Index(2)]
+
+    a = QXTensor(ai, [[2,4]])
+    b = QXTensor(bi, [[1,3], [2,4]])
+    tn = TensorNetwork([a, b])
+    # look at index which is not connected
+    @test length(setdiff(find_connected_indices(tn, ai[1]), [ai[1]])) == 0
+    # look at index connected to two others
+    @test length(setdiff(find_connected_indices(tn, ai[2]), [ai[2], ai[4], bi[4]])) == 0
+    # look at index connected to one other
+    @test length(setdiff(find_connected_indices(tn, ai[3]), [ai[3], bi[3]])) == 0
+
+    # look at case of global connection of hyper indices
+    ai = [Index(2) for _ in 1:4]
+    bi = [ai[3], ai[4], Index(2), Index(2)]
+
+    a = QXTensor(ai, [[1,3], [2,4]])
+    b = QXTensor(bi, [[1,2], [3,4]])
+    tn = TensorNetwork([a, b])
+    # now ai[1] and ai[2] shoudl be connected the indices in b are related there
+    group = find_connected_indices(tn, ai[1])
+    @test ai[2] ∈ group
+end
