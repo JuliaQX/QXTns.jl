@@ -58,8 +58,56 @@ Base.show(io::IO, ::MIME"text/plain", tn::TensorNetwork) = print(io, "TensorNetw
 
 next_tensor_id!(tn::TensorNetwork) = begin tn.next_id += 1; return Symbol("t$(tn.next_id - 1)") end
 bonds(tn::TensorNetwork) = keys(tn.bond_map)
-tensor_data(tn::TensorNetwork, i::Symbol; kwargs...) = tensor_data(tn.tensor_map[i]; kwargs...)
 disable_hyperindices!(tn) = begin map(t -> filter!(x -> false, t.hyper_indices), tn); return nothing end
+
+"""
+    hyperindices(tn::TensorNetwork, i::Symbol; global_hyperindices=true)
+
+Find groups of hyper indices for the given tensor. When global_hyperindices is set to true, then
+indices which are identified as hyperindices because of groups of hyperindices in conneted tensors
+in the network are also included.
+"""
+function hyperindices(tn::TensorNetwork, i::Symbol; global_hyperindices=true)
+    if !global_hyperindices
+        return hyperindices(tn[i])
+    else
+        all_hyperindices = Vector{Vector{Index}}()
+        tensor_indices = copy(inds(tn[i]))
+        while length(tensor_indices) > 0
+            index = tensor_indices[1]
+            connected_indices = find_connected_indices(tn, index)
+            push!(all_hyperindices, intersect(connected_indices, tensor_indices))
+            setdiff!(tensor_indices, connected_indices)
+        end
+        return filter(x -> length(x) >= 2, all_hyperindices)
+    end
+end
+
+"""
+    tensor_data(tn::TensorNetwork, i::Symbol; consider_hyperindices=true, global_hyperindices=true)
+
+Retrieve the tensor data for the given tensor. If the consider_hyperindices flag is true then
+then the data is reshaped to take into account the local hyperindices of the tensor. If the global_hyperindices
+index is also true then groups of hyperindices related via hyperindices for other tensors in the network are
+also considered.
+"""
+function tensor_data(tn::TensorNetwork, i::Symbol; consider_hyperindices=true, global_hyperindices=true)
+    if !global_hyperindices || !consider_hyperindices
+        return tensor_data(tn.tensor_map[i]; consider_hyperindices)
+    else
+        tensor = tn[i]
+        tensor_dims = Tuple([dim(x) for x in inds(tensor)])
+        data = reshape(convert(Array, store(tensor)), tensor_dims)
+        hi = hyperindices(tn, i, global_hyperindices=global_hyperindices)
+        # create an array of the ranks from the groups of hyper indices
+        hi_ranks = Array{Int64, 1}[]
+        all_indices = inds(tensor)
+        for group in hi
+            push!(hi_ranks, map(x -> findfirst(y -> y == x, all_indices) ,group))
+        end
+        return reduce_tensor(data, hi_ranks)
+    end
+end
 
 """
     neighbours(tn::TensorNetwork, tensor::Symbol)
@@ -340,13 +388,12 @@ Replace the given symbol with the given new symbol
 """
 function replace_tensor_symbol!(tn::TensorNetwork, orig_sym::Symbol, new_sym::Symbol)
     tensor = tn[orig_sym]
-    for ind in inds(tensor)
-        replace!(tn[ind], orig_sym => new_sym)
+    for i in inds(tensor)
+        replace!(tn[i], orig_sym => new_sym)
     end
     tn.tensor_map[new_sym] = tensor
     delete!(tn.tensor_map, orig_sym)
 end
-
 
 """
     get_hyperedges(tn::TensorNetwork)::Array{Array{Symbol, 1}, 1}
@@ -355,52 +402,15 @@ Return an array of hyperedges in the given tensornetwork `tn`.
 
 Hyperedges are represented as arrays of tensor symbols.
 """
-function get_hyperedges(tn::TensorNetwork)::Array{Array{Symbol, 1}, 1}
-    # hyperedges are represented as arrays of tensor symbols.
+function get_hyperedges(tn::TensorNetwork)
     hyperedges = Array{Array{Symbol, 1}, 1}()
-
-    # Create an array of edges in the network which have not yet been assigned to a
-    # hyperedge. Also create a queue which will be used to assign edges to hyperedges.
     edges = collect(bonds(tn))
-    q = Queue{Index}()
-
-    while !isempty(edges)
-        # For the next edge in the network, which has not yet been assigned to a hyperedge,
-        # create a new hyperedge. Then add the edge to the queue where it will wait to be
-        # assigned to the new hyperedge.
-        push!(hyperedges, [])
-        enqueue!(q, pop!(edges))
-
-        while !isempty(q)
-            # While the queue is not empty, take the next edge in the queue and append
-            # the corresponding tensor symbols to the new hyperedge.
-            edge = dequeue!(q)
-            tensors = tn.bond_map[edge]
-            hyperedges[end] = union(hyperedges[end], tensors)
-
-            # Check if the neighbouring edges, of the edge just added to the new hyperedge,
-            # belong to the same hyperedge. If they do, add them to the queue.
-            for tensor_symbol in tensors
-                tensor = tn.tensor_map[tensor_symbol]
-                i = findfirst(group -> edge in tensor.indices[group], tensor.hyper_indices)
-                if !(i === nothing)
-                    # Create an array of neighbouring edges not yet assigned to the
-                    # hyperedge
-                    connected_edges = Array{Index, 1}()
-                    for j in tensor.hyper_indices[i]
-                        index = tensor.indices[j]
-                        if !(index == edge) && index in edges
-                            push!(connected_edges, index)
-                        end
-                    end
-                    # Add these edges to the queue where they'll be assigned to the new
-                    # hyperedge and remove them from the array of edges not yet assigned to
-                    # a hyperedge.
-                    for e in connected_edges enqueue!(q, e) end
-                    setdiff!(edges, connected_edges)
-                end
-            end
-        end
+    while length(edges) > 0
+    # for edge in edges
+        edge = edges[1]
+        hyper_indices = find_connected_indices(tn, edge)
+        push!(hyperedges, union(map(x -> tn[x], hyper_indices)...))
+        setdiff!(edges, hyper_indices)
     end
     hyperedges
 end

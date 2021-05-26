@@ -237,13 +237,39 @@ end
     @test length(setdiff(find_connected_indices(tn, ai[3]), [ai[3], bi[3]])) == 0
 
     # look at case of global connection of hyper indices
-    ai = [Index(2) for _ in 1:4]
-    bi = [ai[3], ai[4], Index(2), Index(2)]
-
     a = QXTensor(ai, [[1,3], [2,4]])
     b = QXTensor(bi, [[1,2], [3,4]])
     tn = TensorNetwork([a, b])
     # now ai[1] and ai[2] shoudl be connected the indices in b are related there
     group = find_connected_indices(tn, ai[1])
     @test ai[2] ∈ group
+end
+
+@testset "Test hyperindex finding when considering global hyperindices" begin
+    ai = [Index(2) for _ in 1:4]
+    bi = [ai[3], ai[4], Index(2), Index(2)]
+
+    # create a_data with hyperindex structure matching [[1,3], [2,4]]
+    a_data = rand(2,2,2,2)
+    for i in CartesianIndices((2,2,2,2))
+        if i[1] != i[3] || i[2] != i[4]
+            a_data[Tuple(i)...] = 0.
+        end
+    end
+
+    # create b_data with hyperindex structure matching [[1,2], [3,4]]
+    b_data = rand(2,2,2,2)
+    for i in CartesianIndices((2,2,2,2))
+        if i[1] != i[2] || i[3] != i[4]
+            b_data[Tuple(i)...] = 0.
+        end
+    end
+    a = QXTensor(a_data, ai)
+    b = QXTensor(b_data, bi)
+    tn = TensorNetwork([a, b])
+
+    @test length(setdiff(hyperindices(tn, first(keys(tn)))..., ai)) == 0
+    @test size(tensor_data(tn, first(keys(tn)))) == (2,)
+    @test size(tensor_data(tn, first(keys(tn)), global_hyperindices=false)) == (2, 2)
+    @test size(tensor_data(tn, first(keys(tn)), consider_hyperindices=false)) == (2,2,2,2)
 end
