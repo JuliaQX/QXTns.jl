@@ -410,7 +410,7 @@ end
 
 Given a tensor network and an index in the network, find all indices that are related via hyper edge
 relations. Involves recurisively checking bonds connected to neighbouring tensors of any newly
-related edges found. Returns an array in all edges in the group including the intial edge.
+related edges found. Returns an array of all edges in the group including the initial edge.
 """
 function find_connected_indices(tn::TensorNetwork, bond::Index)
     tensors_to_visit = Set{Symbol}()
