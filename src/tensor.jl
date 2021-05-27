@@ -17,7 +17,13 @@ struct QXTensor
 end
 
 """Custom show for QXTensors"""
-Base.show(io::IO, ::MIME"text/plain", t::QXTensor) = print(io, "QXTensor, rank: $(t.rank), dims: $(Tuple(dim.(t.indices))), storage: $(typeof(t.storage)), hyper_indices: $(t.hyper_indices)")
+function Base.show(io::IO, ::MIME"text/plain", t::QXTensor)
+    print(io, "QXTensor, rank: $(t.rank), " *
+              "dims: $(Tuple(dim.(t.indices))), " *
+              "storage: $(typeof(t.storage)), " *
+              "hyper_indices: $(t.hyper_indices)")
+end
+
 """Custom size function"""
 Base.size(a::QXTensor) = Tuple(dim.(a.indices))
 """Implement inds for QXTensor"""
@@ -36,16 +42,16 @@ function QXTensor(a::T) where T <: Number
 end
 
 """
-    QXTensor(indices::Array{<:Index, 1},
-             hyper_indices::Array{<:Array{Int64, 1}, 1},
+    QXTensor(indices::Vector{<:Index},
+             hyper_indices::Vector{<:Vector{Int64}},
              storage::Union{Nothing, <: NDTensors.TensorStorage}=nothing)
 
 QXTensor constructor which creates a new instance of QXTensor with the given indices
 and hyper indices. If no storage data structure is given then MockTensor of that shape
 is added as the storage.
 """
-function QXTensor(indices::Array{<:Index, 1},
-                  hyper_indices::Array{<:Array{Int64, 1}, 1},
+function QXTensor(indices::Vector{<:Index},
+                  hyper_indices::Vector{<:Vector{Int64}},
                   storage::Union{Nothing, <: NDTensors.TensorStorage}=nothing)
     if storage === nothing
         storage = MockTensor(dim.(indices))
@@ -65,7 +71,8 @@ end
 
 """
     QXTensor(data::AbstractArray{Elt, N},
-             indices::Array{<:Index, 1};
+             indices::Vector{<:Index}
+             hyper_indices::Union{Nothing, Vector{Vector{<:Integer}}}=nothing;
              diagonal_check::Bool=true) where {Elt, N}
 
 Constructor to create a QXTensor instance using the given data and indices. If
@@ -73,19 +80,21 @@ diagonal_check is true, it will automaticallly check which indices are hyper ind
 and record in the hyper_indices field.
 """
 function QXTensor(data::AbstractArray{Elt, N},
-                  indices::Array{<:Index, 1};
+                  indices::Vector{<:Index},
+                  hyper_indices::Union{Nothing, Vector{<:Vector{<:Integer}}}=nothing;
                   diagonal_check::Bool=true) where {Elt, N}
-    # if it is diagonal just expand to full dense format for now
-    # if data isa NDTensors.Diag
-    #     data = collect(Diagonal(data))
-    # end
-    # data = convert(Vector{Elt}, data)
     @assert prod(size(data)) == prod(dim.(indices)) "Product of index dimensions must match data dimension"
-    if diagonal_check && !(data isa MockTensor)
-        hyper_indices = find_hyper_edges(reshape(data, Tuple(dim.(indices))))
-    else
-        hyper_indices = Array{Array{Int64, 1}, 1}()
+
+    # if hyper indices not given, diagonal check enabled and not mock tensor, then attempt to detect hyperindices
+    # directly from tensor
+    if hyper_indices === nothing
+        if diagonal_check && !(data isa MockTensor)
+            hyper_indices = find_hyper_edges(reshape(data, Tuple(dim.(indices))))
+        else
+            hyper_indices = Vector{Vector{Int64}}()
+        end
     end
+
     if !(data isa NDTensors.Dense) && !(data isa MockTensor)
         data = NDTensors.Dense(reshape(data, prod(size(data))))
     end
@@ -140,14 +149,19 @@ end
 """
     hyperindices(t::QXTensor)
 
-Function to get the hyper indices as an array of arrays of Indices
+Function to get the hyper indices as an array of Indices. If the
+all_indices flag is true, then all indices are returned, if false
+then just the groups of 2 or more are returned.
 """
-function hyperindices(t::QXTensor)
-    hyper_indices = Array{Array{Index, 1}, 1}()
+function hyperindices(t::QXTensor; all_indices=false)
+    indices = copy(t.indices)
+    hyper_indices = map(x -> Index[x], indices)
     for group in t.hyper_indices
-        push!(hyper_indices, t.indices[group])
+        group = sort(group)
+        append!(hyper_indices[group[1]], indices[group[2:end]])
+        empty!.(hyper_indices[group[2:end]])
     end
-    hyper_indices
+    filter(x -> length(x) > (all_indices ? 0 : 1), hyper_indices)
 end
 
 """

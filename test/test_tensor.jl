@@ -16,6 +16,7 @@ using LinearAlgebra
     indices = [Index(2), Index(2), Index(2), Index(2)]
     a = QXTensor(data, indices)
     @test hyperindices(a) == [indices[[2, 4]]]
+    @test hyperindices(a, all_indices=true) == [[indices[1]], indices[[2, 4]], [indices[3]]]
 
     data = reshape(Diagonal(ones(4)), (2, 2, 2 ,2))
     indices = [Index(2), Index(2), Index(2), Index(2)]
