@@ -1,6 +1,6 @@
 using LinearAlgebra
 
-export reduce_tensor
+export reduce_tensor, expand_tensor
 
 """
     function decompose_gate!(gate_data::Array{<:Number, 4},
@@ -100,20 +100,7 @@ function isdiagonal(A::AbstractArray{Elt, 2}) where Elt
     end
 end
 
-"""
-    reduce_tensor(A::AbstractArray{Elt, N}, hyper_index_groups::Array{Int64, 1})
-
-Function to reduce the dimension of the given tensor assuming the given hyper edge groups. For example a diagonal
-matrix will have a single hyper edge group with both indices [1, 2]
-
-```jldoctest
-julia> reduce_tensor([[1, 0] [0, 2]], [[1, 2]])
-2-element Vector{Int64}:
- 1
- 2
-```
-"""
-function reduce_tensor(A::AbstractArray{Elt, N}, hyper_index_groups::Array{Array{Int64, 1}, 1}) where {Elt, N}
+function _reduce_tensor_dims(A::AbstractArray{Elt, N}, hyper_index_groups::Array{Array{Int64, 1}, 1}) where {Elt, N}
     tensor_dims = size(A)
     index_map = Dict{Int64, Int64}(x => x for x in 1:N)
     for group in hyper_index_groups
@@ -125,6 +112,34 @@ function reduce_tensor(A::AbstractArray{Elt, N}, hyper_index_groups::Array{Array
     end
     remaining_dims = unique(sort(collect(values(index_map))))
     remaining_dim_sizes = [tensor_dims[x] for x in remaining_dims]
+    return remaining_dims, remaining_dim_sizes
+end
+
+"""
+    reduce_tensor(A::AbstractArray{Elt, N}, hyper_index_groups::Array{Int64, 1})
+
+Function to reduce the rank of the given tensor assuming the given hyper edge groups.
+For example a diagonal matrix will have a single hyper edge group with both indices [1, 2].
+This function will reduce this to a vector containing only the diagonal elements. can
+be seen as a generalisation of the diag function.
+
+```jldoctest
+julia> reduce_tensor([[1, 0] [0, 2]], [[1, 2]])
+2-element Vector{Int64}:
+ 1
+ 2
+```
+"""
+function reduce_tensor(A::AbstractArray{Elt, N}, hyper_index_groups::Array{Array{Int64, 1}, 1}) where {Elt, N}
+    remaining_dims, remaining_dim_sizes = _reduce_tensor_dims(A, hyper_index_groups)
+    index_map = Dict{Int64, Int64}(x => x for x in 1:N)
+    for group in hyper_index_groups
+        @assert length(group) >= 2 "Not all hyper edge groups have minimum dimension 2"
+        ref = group[1]
+        for j in group[2:end]
+            index_map[j] = ref
+        end
+    end
 
     # create array to store reduced tensor with correct dimensions
     inverse_index_map = Dict{Int64, Array{Int64, 1}}(x => Int64[] for x in remaining_dims)
@@ -144,4 +159,67 @@ function reduce_tensor(A::AbstractArray{Elt, N}, hyper_index_groups::Array{Array
         Ar[i] = A[map_reduced_indices_to_full(Tuple(i))...]
     end
     Ar
+end
+
+struct BlockTensor{T,N,M} <: AbstractArray{T, N}
+    size::NTuple{N, Int}
+    index_map::NTuple{N, Int}
+    data::AbstractArray{T,M}
+end
+
+BlockTensor(size::NTuple{N, Int64}) where N = BlockTensor{ComplexF64, N}(size)
+
+"""Overload functions from base to make BlockTensor usable"""
+Base.copy(a::BlockTensor{T, N}) where {T, N} = BlockTensor{T, N}(a.size)
+Base.length(a::BlockTensor) = prod(size(a))
+Base.size(a::BlockTensor) = a.size
+Base.getindex(t::BlockTensor, i::Int64) = t[Tuple(CartesianIndices(t.size)[i])...]
+# Base.getindex(t::BlockTensor, i::CartesianIndex) = t[Tuple(i)...]
+Base.IndexStyle(::Type{<:BlockTensor}) = IndexLinear()
+
+
+function Base.getindex(t::BlockTensor{T, N, M}, i...) where {T, N, M}
+    new_index = Vector{Int}(undef, M)
+    for x in 1:N
+        xm = findfirst(y -> y == t.index_map[x], t.index_map)
+        if i[x] != i[xm]
+            return convert(T, 0)
+        end
+        new_index[t.index_map[x]] = i[x]
+    end
+    return t.data[new_index...]
+end
+
+Base.show(io::IO, ::MIME"text/plain", a::BlockTensor) =
+    print(io, "BlockTensor with dims $(a.size) and index map $(a.index_map)")
+
+"""
+    expand_tensor(A::AbstractArray{Elt, N}, hyper_index_groups::Array{Int64, 1})
+
+Function to expand the rank of the given tensor assuming the given hyper edge groups.
+Like a generalisation of Diagonal (but returns the full dense tensor). For example
+if passed a vector and given hyperindex groups [1,2], it will return a matrix
+with where non diagonal elements are zero. Efficiency could be improved by creating
+a datastructure that implements
+
+```jldoctest
+julia> expand_tensor([1, 2], [[1, 2]])
+2×2 Matrix{Int64}:
+ 1  0
+ 0  2
+```
+"""
+function expand_tensor(A::AbstractArray{Elt, N}, hyper_index_groups::Array{Array{Int64, 1}, 1}) where {Elt, N}
+    full_dim = N + sum(map(x -> length(x) - 1, hyper_index_groups))
+    index_map = OrderedDict(x => x for x in 1:full_dim)
+    for g in hyper_index_groups
+        g = sort(g)
+        for i in g[2:end]
+            index_map[i] = g[1]
+        end
+    end
+    index_order_map = Dict(x => i for (i, x) in enumerate(sort(unique(values(index_map)))))
+    index_map = Tuple(map(x -> index_order_map[x], values(index_map)))
+    new_size = Tuple(map(x -> size(A)[x], values(index_map)))
+    BlockTensor{Elt, full_dim, N}(new_size, index_map, A)
 end

@@ -1,4 +1,5 @@
 using ITensors
+using LinearAlgebra
 
 @testset "Test TensorNetwork struct and interface functions" begin
     # create empty tensor network
@@ -114,7 +115,8 @@ end
     # we add input but no output to get full output vector
     tnc = create_test_tnc(no_input=false, no_output=true)
 
-    output = simple_contraction(tnc)
+    output = simple_contraction(tnc.tn)
+    output = reshape(output, 8)
     ref = zeros(8)
     ref[[1,8]] .= 1/sqrt(2)
     @test all(output .≈ ref)
@@ -122,25 +124,35 @@ end
     tnc =  create_test_tnc(no_input=false, no_output=true, decompose=false)
 
     output = simple_contraction(tnc)
+    output = reshape(output, 8)
     ref = zeros(8)
     ref[[1,8]] .= 1/sqrt(2)
+    @test all(output .≈ ref)
+
+    tnc =  create_test_tnc(no_input=false, no_output=true, decompose=false)
+
+    simple_contraction!(tnc)
+    ref = zeros(8)
+    ref[[1,8]] .= 1/sqrt(2)
+    output = tensor_data(tnc, first(keys(tnc)))
+    output = reshape(output, prod(size(output)))
     @test all(output .≈ ref)
 end
 
 
 @testset "Test mock tensors" begin
     # create a mock tensor and check dimension reported correctly
-    dim = [2 << 20, 2<< 20]
+    dim = (2 << 20, 2<< 20)
     a_store = MockTensor(dim)
     @test length(a_store) == prod(dim)
 
     # create two tensors using mock tensor as storage and contract
-    b_store = MockTensor([dim[1], 2, 4]);
+    b_store = MockTensor((dim[1], 2, 4));
     a_inds = Index.(dim)
-    a = QXTensor(a_store, collect(a_inds))
-    b = QXTensor(b_store, [a_inds[1], Index(2), Index(4)])
-    c = contract_tensors(a, b)
-    @test length(store(c)) == dim[2] * 2 * 4
+    a = QXTensor(collect(a_inds), a_store)
+    b = QXTensor([a_inds[1], Index(2), Index(4)], b_store)
+    c = contract_tensors(a, b, mock=true)
+    @test size(c) == (dim[2], 2, 4)
 end
 
 # @testset "Test tensor decomnposition" begin
@@ -215,12 +227,12 @@ end
     @test all(map(x -> length(hyperindices(x)) == 0, tn))
 
     tn = TensorNetwork()
-    t = QXTensor(Diagonal(ones(4)), [Index(4), Index(4)])
+    t = QXTensor([Index(4), Index(4)], Diagonal(ones(4)))
     sym = push!(tn, t)
-    size(tensor_data(tn, sym)) == (4,4)
-    size(tensor_data(tn, sym, consider_hyperindices=true)) == (4,)
+    @test size(tensor_data(tn, sym; consider_hyperindices=false)) == (4,4)
+    @test size(tensor_data(tn, sym; consider_hyperindices=true)) == (4,)
     disable_hyperindices!(tn)
-    size(tensor_data(tn, sym, consider_hyperindices=true)) == (4,4)
+    @test size(tensor_data(tn, sym; consider_hyperindices=true)) == (4,4)
 end
 
 @testset "Test disable hyperindices" begin
@@ -249,25 +261,12 @@ end
 @testset "Test hyperindex finding when considering global hyperindices" begin
     ai = [Index(2) for _ in 1:4]
     bi = [ai[3], ai[4], Index(2), Index(2)]
+    a = QXTensor(ai, [[1,3], [2,4]], rand(2,2,2,2))
+    b = QXTensor(bi, [[1,2], [3,4]], rand(2,2,2,2))
 
-    # create a_data with hyperindex structure matching [[1,3], [2,4]]
-    a_data = rand(2,2,2,2)
-    for i in CartesianIndices((2,2,2,2))
-        if i[1] != i[3] || i[2] != i[4]
-            a_data[Tuple(i)...] = 0.
-        end
-    end
-
-    # create b_data with hyperindex structure matching [[1,2], [3,4]]
-    b_data = rand(2,2,2,2)
-    for i in CartesianIndices((2,2,2,2))
-        if i[1] != i[2] || i[3] != i[4]
-            b_data[Tuple(i)...] = 0.
-        end
-    end
     tn = TensorNetwork()
-    a_sym = push!(tn, QXTensor(rand(2,2,2,2), ai, [[1,3], [2,4]]))
-    b_sym = push!(tn, QXTensor(rand(2,2,2,2), bi, [[1,2], [3,4]]))
+    a_sym = push!(tn, a)
+    b_sym = push!(tn, b)
 
     # test that global hyperindices are taken into account by default when getting hyperindices
     # for a tensor from a tensor network. In this case all indices of a for a single group
@@ -287,9 +286,9 @@ end
     ci = [ai[2], bi[2]]
 
     tn = TensorNetwork()
-    a_sym = push!(tn, QXTensor(rand(2,2,2), ai, [[2,3]]))
-    b_sym = push!(tn, QXTensor(rand(2,2), bi))
-    c_sym = push!(tn, QXTensor(rand(2,2), ci, [[1,2]]))
+    a_sym = push!(tn, QXTensor(ai, [[2,3]], rand(2,2,2)))
+    b_sym = push!(tn, QXTensor(bi, rand(2,2)))
+    c_sym = push!(tn, QXTensor(ci, [[1,2]], rand(2,2)))
 
     @test Set(hyperindices(tn, b_sym)[1]) == Set([bi[2], ai[2], ai[3]])
     @test hyperindices(tn, b_sym, global_hyperindices=false) == []
@@ -302,9 +301,9 @@ end
     ci = [ai[2], bi[2]]
 
     tn = TensorNetwork()
-    a_sym = push!(tn, QXTensor(rand(2,2,2), ai, [[2,3]]))
-    b_sym = push!(tn, QXTensor(rand(2,2,2), bi))
-    c_sym = push!(tn, QXTensor(rand(2,2), ci, [[1,2]]))
+    a_sym = push!(tn, QXTensor(ai, [[2,3]], rand(2,2,2)))
+    b_sym = push!(tn, QXTensor(bi, rand(2,2,2)))
+    c_sym = push!(tn, QXTensor(ci, [[1,2]], rand(2,2)))
     r = contraction_indices(tn, a_sym, b_sym)
 
     @test r.a_labels == [1,2]
@@ -326,8 +325,8 @@ end
     bi = copy(ai)
 
     tn = TensorNetwork()
-    a_sym = push!(tn, QXTensor(rand(2,2), ai))
-    b_sym = push!(tn, QXTensor(rand(2,2), bi))
+    a_sym = push!(tn, QXTensor(ai, rand(2,2)))
+    b_sym = push!(tn, QXTensor(bi, rand(2,2)))
     r = contraction_indices(tn, a_sym, b_sym)
     c_sym = contract_pair!(tn, a_sym, b_sym, mock=true)
 end

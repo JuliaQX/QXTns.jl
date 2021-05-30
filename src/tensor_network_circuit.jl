@@ -82,25 +82,25 @@ function Base.push!(tnc::TensorNetworkCircuit,
                     qubits::Vector{Int64},
                     data::Array{T, 2};
                     decompose::Bool=true) where T
-    input_indices = tnc.output_indices[qubits]
-    tnc.output_indices[qubits] = output_indices = [prime(x) for x in input_indices]
+    gate_input_indices = tnc.output_indices[qubits]
+    tnc.output_indices[qubits] = gate_output_indices = [prime(x) for x in gate_input_indices]
     if length(qubits) == 1 || !decompose
-        indices = [output_indices..., input_indices...]
+        indices = [gate_output_indices..., gate_input_indices...]
         @assert prod(size(data)) == prod(dim.(indices)) "Data matrix dimension does not match indices"
         data = reshape(data, Tuple(dim.(indices)))
         push!(tnc, indices, data)
     elseif length(qubits) == 2 && decompose
-        data = reshape(data, Tuple([dim.(output_indices)..., dim.(input_indices)...]))
+        data = reshape(data, Tuple([dim.(gate_output_indices)..., dim.(gate_input_indices)...]))
         A, B = decompose_gate(data)
         if size(A)[3] == size(B)[1] == 1
             A = reshape(A, Tuple(size(A)[1:2]))
             B = reshape(A, Tuple(size(B)[2:3]))
-            a_indices = [output_indices[1], input_indices[1]]
-            b_indices = [output_indices[2], input_indices[2]]
+            a_indices = [gate_output_indices[1], gate_input_indices[1]]
+            b_indices = [gate_output_indices[2], gate_input_indices[2]]
         else
             virtual_index = Index(size(A)[3])
-            a_indices = [output_indices[1], input_indices[1], virtual_index]
-            b_indices = [virtual_index, output_indices[2], input_indices[2]]
+            a_indices = [gate_output_indices[1], gate_input_indices[1], virtual_index]
+            b_indices = [virtual_index, gate_output_indices[2], gate_input_indices[2]]
         end
         push!(tnc, a_indices, A)
         push!(tnc, b_indices, B)
@@ -110,7 +110,7 @@ function Base.push!(tnc::TensorNetworkCircuit,
     end
 end
 
-Base.push!(tnc::TensorNetworkCircuit, indices::Vector{<:Index}, data::Array{T, N}; kwargs...) where {T, N} = push!(tnc.tn, indices, data; kwargs...)
+Base.push!(tnc::TensorNetworkCircuit, indices::Vector{<:Index}, data::AbstractArray; kwargs...) = push!(tnc.tn, indices, data; kwargs...)
 
 """
     delete!(tnc::TensorNetworkCircuit, tensor_id::Symbol)
@@ -180,6 +180,7 @@ function decompose_tensor!(tnc::TensorNetworkCircuit, args...; kwargs...)
 end
 
 simple_contraction(tnc::TensorNetworkCircuit) = simple_contraction(tnc.tn)
+simple_contraction!(tnc::TensorNetworkCircuit) = simple_contraction!(tnc.tn)
 
 """
     create_test_tnc(;input::Union{String, Nothing}=nothing,
@@ -196,10 +197,10 @@ function create_test_tnc(;input::Union{String, Nothing}=nothing,
                          no_output::Bool=false,
                          kwargs...)
     tnc = TensorNetworkCircuit(3)
+    if !no_input add_input!(tnc, input) end
     push!(tnc, [1], Gates.h(); kwargs...)
     push!(tnc, [2, 1], Gates.cx(); kwargs...)
     push!(tnc, [3, 2], Gates.cx(); kwargs...)
-    if !no_input add_input!(tnc, input) end
     if !no_output add_output!(tnc, output) end
     tnc
 end

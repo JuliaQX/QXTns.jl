@@ -10,7 +10,7 @@ export TensorNetwork, bonds, simple_contraction, simple_contraction!, neighbours
 export decompose_tensor!, replace_with_svd!
 export contract_tn!, contract_pair!, replace_tensor_symbol!, contract_ncon_indices
 export get_hyperedges, disable_hyperindices!, find_connected_indices
-export contraction_indices
+export contraction_indices, contract_pair
 
 """Tensor network data-structure"""
 mutable struct TensorNetwork
@@ -61,7 +61,8 @@ Base.show(io::IO, ::MIME"text/plain", tn::TensorNetwork) = print(io, "TensorNetw
 
 next_tensor_id!(tn::TensorNetwork) = begin tn.next_id += 1; return Symbol("t$(tn.next_id - 1)") end
 bonds(tn::TensorNetwork) = keys(tn.bond_map)
-disable_hyperindices!(tn) = begin map(t -> filter!(x -> false, t.hyper_indices), tn); return nothing end
+disable_hyperindices!(tn) = begin disable_hyperindices!.(tn); nothing; end
+
 
 """
     hyperindices(tn::TensorNetwork, i::Symbol; global_hyperindices=true)
@@ -95,23 +96,31 @@ index is also true then groups of hyperindices related via hyperindices for othe
 also considered.
 """
 function tensor_data(tn::TensorNetwork, i::Symbol; consider_hyperindices=true, global_hyperindices=true)
-    if !global_hyperindices || !consider_hyperindices
-        return tensor_data(tn.tensor_map[i]; consider_hyperindices)
-    else
-        tensor = tn[i]
-        tensor_dims = Tuple([dim(x) for x in inds(tensor)])
-        data = reshape(convert(Array, store(tensor)), tensor_dims)
-        hi = hyperindices(tn, i, global_hyperindices=global_hyperindices)
-        hi = map(x -> intersect(inds(tn[i]), x), hi) # exclude indices connected to other tensors
-        filter!(x -> length(x) >= 2, hi)
-        # create an array of the ranks from the groups of hyper indices
-        hi_ranks = Array{Int64, 1}[]
-        all_indices = inds(tensor)
-        for group in hi
-            push!(hi_ranks, map(x -> findfirst(y -> y == x, all_indices) ,group))
+    if consider_hyperindices && global_hyperindices
+        # reduce from locol hyperindices to global_hyperindices
+        global_hi = hyperindices(tn, i; global_hyperindices=true)
+        # filter any indices not connected
+        global_hi = map(global_hi) do x
+            x = filter(y -> y ∈ inds(tn[i]), x)
         end
-        return reduce_tensor(data, hi_ranks)
+        global_hi = filter(x -> length(x) > 1, global_hi)
+        local_hi = hyperindices(tn, i; global_hyperindices=false)
+        missing_hi = false
+        for g in global_hi
+            if findfirst(x -> Set(x) == Set(g), local_hi) === nothing
+                missing_hi = true
+            end
+        end
+        if missing_hi
+            # we expand a reduce to get to final reduced version
+            local_hi_ranks = indices2ranks(tn[i], local_hi)
+            global_hi_ranks = indices2ranks(tn[i], global_hi)
+            t = expand_tensor(store(tn[i]), local_hi_ranks)
+            return reduce_tensor(t, global_hi_ranks)
+        end
     end
+    # can delegate to tensor specific tensor_data function
+    return tensor_data(tn.tensor_map[i]; consider_hyperindices)
 end
 
 """
@@ -155,7 +164,7 @@ function Base.push!(tn::TensorNetwork,
                     data::Array{T, N};
                     tid::Union{Nothing, Symbol}=nothing) where {T, N}
     @assert size(data) == Tuple(dim.(indices))
-    tensor = QXTensor(data, indices)
+    tensor = QXTensor(indices, data)
     if tid === nothing tid = next_tensor_id!(tn) end
     @assert !(tid in keys(tn))
     tn.tensor_map[tid] = tensor
@@ -221,6 +230,35 @@ function simple_contraction!(tn::TensorNetwork)
     store(tn[A])
 end
 
+
+"""
+    contract_pair(tn::TensorNetwork, a_sym::Symbol, b_sym::Symbol; mock::Bool=false)
+
+Contract the tensors in 'tn' with ids 'a_sym' and 'b_sym'. If the mock flag is true then the
+new tensor will be a mock tensor with the right dimensions but without the actual data.
+"""
+function contract_pair(tn::TensorNetwork, a_sym::Symbol, b_sym::Symbol; mock::Bool=false)
+    r = contraction_indices(tn, a_sym, b_sym)
+
+    # identify positions of local hyper index groups in c
+    pos = 1
+    c_hyper_indices = map(r.c_indices) do g
+        pos += length(g)
+        collect(pos-length(g):pos-1)
+    end
+    c_hyper_indices = convert(Vector{Vector{Int}}, c_hyper_indices)
+    filter!(x -> length(x) > 1, c_hyper_indices)
+
+    if mock || (tn[a_sym].storage isa MockTensor || tn[b_sym].storage isa MockTensor)
+        # flatten c_indices to get indices
+        c = QXTensor(convert(Vector{Index}, vcat(r.c_indices...)), c_hyper_indices)
+    else
+        c_data = EinCode((Tuple(r.a_labels), Tuple(r.b_labels)), Tuple(r.c_labels))(tensor_data(tn, a_sym), tensor_data(tn, b_sym))
+        c = QXTensor(convert(Vector{Index}, vcat(r.c_indices...)), c_hyper_indices, c_data)
+    end
+    c
+end
+
 """
     contract_pair!(tn::TensorNetwork, a_sym::Symbol, b_sym::Symbol, c_sym::Symbol=:_; mock::Bool=false)
 
@@ -233,28 +271,7 @@ a new id is created for it.
 function contract_pair!(tn::TensorNetwork, a_sym::Symbol, b_sym::Symbol, c_sym::Symbol=:_;
                         mock::Bool=false)
 
-    r = contraction_indices(tn, a_sym, b_sym)
-
-    # identify positions of local hyper index groups in c
-    pos = 1
-    c_hyper_indices = map(r.c_indices) do g
-        pos += length(g)
-        collect(pos-length(g):pos-1)
-    end
-    c_hyper_indices = convert(Vector{Vector{Int}}, c_hyper_indices)
-    filter!(x -> length(x) > 1, c_hyper_indices)
-
-    if mock
-        # flatten c_indices to get indices
-        c = QXTensor(convert(Vector{Index}, vcat(r.c_indices...)), c_hyper_indices)
-    else
-        c_data = EinCode((Tuple(r.a_labels), Tuple(r.b_labels)), Tuple(r.c_labels))(tensor_data(tn, a_sym), tensor_data(tn, b_sym))
-        @show size(c_data)
-        @show dim.(vcat(r.c_indices...))
-        c_data_storage = NDTensors.Dense(reshape(c_data, prod(size(c_data))))
-        # TODO: inconsistency with adding reduced dimension data to tensor
-        c = QXTensor(length(vcat(r.c_indices...)), vcat(r.c_indices...), c_hyper_indices, c_data_storage)
-    end
+    c = contract_pair(tn, a_sym, b_sym; mock=mock)
 
     # Get and contract the tensors a and b to create tensor c
     a = tn.tensor_map[a_sym]
@@ -518,4 +535,27 @@ function find_connected_indices(tn::TensorNetwork, bond::Index)
         end
     end
     collect(related_edges)
+end
+
+"""
+    contraction_indices((a::QXTensor,b::QXTensor)
+
+Function to work out the contraction indices that would be used to contract the given
+tensors. Exptected indices in Einstein notation using positive integers
+"""
+function contraction_indices(a::QXTensor, b::QXTensor)
+    tn = TensorNetwork([a, b])
+    contraction_indices(tn, keys(tn)...)
+end
+
+"""
+    contract_tensors(a::QXTensor, b::QXTensor; mock::Bool=false)
+
+Function to contract two QXTensors and return another QXTensor. If the mock flag
+is false or either of the input tensors use MockTensor then the storage for the final
+tensor will be of type MockTensor.
+"""
+function contract_tensors(a::QXTensor, b::QXTensor; mock::Bool=false)
+    tn = TensorNetwork([a, b])
+    contract_pair(tn, keys(tn)...; mock=mock)
 end
