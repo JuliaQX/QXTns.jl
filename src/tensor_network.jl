@@ -97,13 +97,13 @@ also considered.
 """
 function tensor_data(tn::TensorNetwork, i::Symbol; consider_hyperindices=true, global_hyperindices=true)
     if consider_hyperindices && global_hyperindices
-        # reduce from locol hyperindices to global_hyperindices
         global_hi = hyperindices(tn, i; global_hyperindices=true)
-        # filter any indices not connected
+        # filter any indices not connected to tensor
         global_hi = map(global_hi) do x
             x = filter(y -> y ∈ inds(tn[i]), x)
         end
         global_hi = filter(x -> length(x) > 1, global_hi)
+
         local_hi = hyperindices(tn, i; global_hyperindices=false)
         missing_hi = false
         for g in global_hi
@@ -112,11 +112,16 @@ function tensor_data(tn::TensorNetwork, i::Symbol; consider_hyperindices=true, g
             end
         end
         if missing_hi
-            # we expand a reduce to get to final reduced version
-            local_hi_ranks = indices2ranks(tn[i], local_hi)
-            global_hi_ranks = indices2ranks(tn[i], global_hi)
-            t = expand_tensor(store(tn[i]), local_hi_ranks)
-            return reduce_tensor(t, global_hi_ranks)
+            t = store(tn[i])
+            if length(local_hi) > 0
+                local_hi_ranks = indices2ranks(tn[i], local_hi)
+                t = expand_tensor(t, local_hi_ranks)
+            end
+            if length(global_hi) > 0
+                global_hi_ranks = indices2ranks(tn[i], global_hi)
+                t = reduce_tensor(t, global_hi_ranks)
+            end
+            return t
         end
     end
     # can delegate to tensor specific tensor_data function
@@ -212,7 +217,9 @@ Function to perfrom a simple contraction, contracting all tensors in order.
 Only useful for very small networks for testing.
 """
 function simple_contraction(tn::TensorNetwork)
-    store(reduce(contract_tensors, tn, init=QXTensor(1.)))
+    a = QXTensor(1.)
+    for t in tn a = contract_tensors(a, t) end
+    tensor_data(a; consider_hyperindices=false)
 end
 
 """
@@ -229,7 +236,6 @@ function simple_contraction!(tn::TensorNetwork)
     end
     store(tn[A])
 end
-
 
 """
     contract_pair(tn::TensorNetwork, a_sym::Symbol, b_sym::Symbol; mock::Bool=false)

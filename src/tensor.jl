@@ -94,7 +94,8 @@ is returned.
 """
 function tensor_data(tensor::QXTensor; consider_hyperindices::Bool=true)
     data = store(tensor)
-    if consider_hyperindices
+    hi = hyperindices(tensor)
+    if consider_hyperindices || length(hi) == 0
         # data is stored in reduced form
         return data
     else
@@ -103,12 +104,17 @@ function tensor_data(tensor::QXTensor; consider_hyperindices::Bool=true)
     end
 end
 
+"""
+    indices2ranks(tensor::QXTensor, hi::Vector{<:Vector{<:Index}})
+
+Function convert groups of indices to groups of ranks of those indices.
+"""
 function indices2ranks(tensor::QXTensor, hi::Vector{<:Vector{<:Index}})
     # create an array of the ranks from the groups of hyper indices
     hi_ranks = Array{Int64, 1}[]
     all_indices = inds(tensor)
     for group in hi
-        push!(hi_ranks, map(x -> findfirst(y -> y == x, all_indices) ,group))
+        push!(hi_ranks, sort(map(x -> findfirst(y -> y == x, all_indices) ,group)))
     end
     hi_ranks
 end
@@ -138,7 +144,9 @@ Function to disable use of hyper indices with this tensor by removing the hyper
 indices and reshaping storage
 """
 function disable_hyperindices!(t::QXTensor)
-    t.storage = collect(expand_tensor(t.storage, t.hyper_indices))
-    empty!(t.hyper_indices)
+    if length(t.hyper_indices) > 0
+        t.storage = collect(expand_tensor(t.storage, t.hyper_indices))
+        empty!(t.hyper_indices)
+    end
     nothing
 end

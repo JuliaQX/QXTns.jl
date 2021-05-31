@@ -131,6 +131,7 @@ julia> reduce_tensor([[1, 0] [0, 2]], [[1, 2]])
 ```
 """
 function reduce_tensor(A::AbstractArray{Elt, N}, hyper_index_groups::Array{Array{Int64, 1}, 1}) where {Elt, N}
+    @assert all([g == sort(g) for g in hyper_index_groups]) "Hyperindex groups must be sorted in ascending rank order"
     remaining_dims, remaining_dim_sizes = _reduce_tensor_dims(A, hyper_index_groups)
     index_map = Dict{Int64, Int64}(x => x for x in 1:N)
     for group in hyper_index_groups
@@ -177,7 +178,12 @@ Base.getindex(t::BlockTensor, i::Int64) = t[Tuple(CartesianIndices(t.size)[i])..
 # Base.getindex(t::BlockTensor, i::CartesianIndex) = t[Tuple(i)...]
 Base.IndexStyle(::Type{<:BlockTensor}) = IndexLinear()
 
+"""
+    Base.getindex(t::BlockTensor{T, N, M}, i...) where {T, N, M}
 
+Overload the getindex function. Returns zero if the indiex on ranks identified
+as hyperindex groups differ and the relevant tensor index otherwise.
+"""
 function Base.getindex(t::BlockTensor{T, N, M}, i...) where {T, N, M}
     new_index = Vector{Int}(undef, M)
     for x in 1:N
@@ -202,7 +208,7 @@ if passed a vector and given hyperindex groups [1,2], it will return a matrix
 with where non diagonal elements are zero. Efficiency could be improved by creating
 a datastructure that implements
 
-```jldoctest
+```
 julia> expand_tensor([1, 2], [[1, 2]])
 2×2 Matrix{Int64}:
  1  0
