@@ -8,7 +8,7 @@ using OMEinsum
 export next_tensor_id!
 export TensorNetwork, bonds, simple_contraction, simple_contraction!, neighbours
 export decompose_tensor!, replace_with_svd!
-export contract_tn!, contract_pair!, replace_tensor_symbol!, contract_ncon_indices
+export contract_tn!, contract_pair!, replace_tensor_symbol!
 export get_hyperedges, disable_hyperindices!, find_connected_indices
 export contraction_indices, contract_pair
 
@@ -442,43 +442,6 @@ function Base.delete!(tn::TensorNetwork, tensor_id::Symbol)
         filter!(id -> id ≠ tensor_id, tn.bond_map[index])
     end
     delete!(tn.tensor_map, tensor_id)
-end
-
-"""
-    contract_ncon_indices(tn::TensorNetwork, A_sym::Symbol, B_sym)
-
-Function return indices in ncon format for contraction of tensors with given symbols.
-Returns two tuples for indices in each with convention that negative values are remaining
-indices and positive values are indices being contracted over.
-
-For example if (1, -1), (-2, 1) is returned, this menas that the first index of tensor A
-A is contracted with the second index of  tensor B and the resulting tensor will have
-indices corresponding to the second index of the first tensor and first index of the second
-tensor.
-"""
-function contract_ncon_indices(tn::TensorNetwork, A_sym::Symbol, B_sym::Symbol)
-    _contract_ncon_indices(IndexSet(inds(tn[A_sym])), IndexSet(inds(tn[B_sym])))
-end
-
-"""
-    _contract_ncon_indices(A_inds::IndexSet{M}, B_inds::IndexSet{N}) where {M, N}
-
-Function return indices in ncon format for contraction of tensors with given index sets.
-Returns two tuples for indices in each with convention that negative values are remaining
-indices and positive values are indices being contracted over.
-
-For example if (1, -1), (-2, 1) is returned, this menas that the first index of tensor A
-A is contracted with the second index of  tensor B and the resulting tensor will have
-indices corresponding to the second index of the first tensor and first index of the second
-tensor.
-"""
-function _contract_ncon_indices(A_inds::IndexSet{M}, B_inds::IndexSet{N}) where {M, N}
-    labels = ITensors.compute_contraction_labels(A_inds, B_inds)
-    # ITensors uses a different convention with negatie and positive reversed and
-    # find lowest positive
-    all_positive_labels = [x for x in vcat(collect.(labels)...) if x > 0]
-    offset = length(all_positive_labels) > 0 ? minimum(all_positive_labels) - 1 : 0
-    [Tuple([x > 0 ? -(x - offset) : -x for x in ls]) for ls in labels]
 end
 
 """
