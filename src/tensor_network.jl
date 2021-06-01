@@ -2,15 +2,15 @@ using DataStructures
 using ITensors
 using QXTns
 
+using OMEinsum
+
 # TensorNetwork struct and public functions
 export next_tensor_id!
 export TensorNetwork, bonds, simple_contraction, simple_contraction!, neighbours
 export decompose_tensor!, replace_with_svd!
-export contract_tn!, contract_pair!, replace_tensor_symbol!, contract_ncon_indices
-export get_hyperedges
-
-# const qxsim_ids = Dict{Symbol, Int64}(:tensor_id => 0)
-# @noinline next_tensor_id() = begin qxsim_ids[:tensor_id] += 1; Symbol("t$(qxsim_ids[:tensor_id])") end
+export contract_tn!, contract_pair!, replace_tensor_symbol!
+export get_hyperedges, disable_hyperindices!, find_connected_indices
+export contraction_indices, contract_pair
 
 """Tensor network data-structure"""
 mutable struct TensorNetwork
@@ -22,25 +22,6 @@ end
 # constructors
 TensorNetwork() = TensorNetwork(OrderedDict{Symbol, QXTensor}(), OrderedDict{Index, Vector{Symbol}}(), 1)
 
-    # """
-    #     TensorNetwork(tensor_map::OrderedDict{Symbol, QXTensor}, bond_map::OrderedDict{Index, Vector{Symbol}})
-
-    # Constructor which finds the highest index already in use and uses this to set the next id field
-    # """
-    # function TensorNetwork(tensor_map::OrderedDict{Symbol, QXTensor}, bond_map::OrderedDict{Index, Vector{Symbol}})
-    #     next_id = 1
-    #     for s in keys(tensor_map)
-    #         m = match(r"t([0-9*])", String(s))
-    #         if m !== nothing
-    #             val = parse(Int64, m[1])
-    #             if val >= next_id
-    #                 next_id = val + 1
-    #             end
-    #         end
-    #     end
-    #     TensorNetwork(tensor_map, bond_map, next_id)
-    # end
-
 """
     TensorNetwork(array::Vector{<: QXTensor})
 
@@ -50,11 +31,11 @@ function TensorNetwork(array::Vector{<: QXTensor})
     tensor_map = OrderedDict{Symbol, QXTensor}()
     bond_map = OrderedDict{Index, Vector{Symbol}}()
     next_id = 1
-    for (i, tensor) in enumerate(array)
+    for t in array
         tensor_id = Symbol("t$(next_id)")
         next_id += 1
-        tensor_map[tensor_id] = tensor
-        for bond in inds(tensor)
+        tensor_map[tensor_id] = t
+        for bond in inds(t)
             if haskey(bond_map, bond)
                 push!(bond_map[bond], tensor_id)
             else
@@ -80,7 +61,70 @@ Base.show(io::IO, ::MIME"text/plain", tn::TensorNetwork) = print(io, "TensorNetw
 
 next_tensor_id!(tn::TensorNetwork) = begin tn.next_id += 1; return Symbol("t$(tn.next_id - 1)") end
 bonds(tn::TensorNetwork) = keys(tn.bond_map)
-tensor_data(tn::TensorNetwork, i::Symbol) = tensor_data(tn.tensor_map[i])
+disable_hyperindices!(tn) = begin disable_hyperindices!.(tn); nothing; end
+
+
+"""
+    hyperindices(tn::TensorNetwork, i::Symbol; global_hyperindices=true)
+
+Find groups of hyper indices for the given tensor. When global_hyperindices is set to true, then
+indices which are identified as hyperindices because of groups of hyperindices in conneted tensors
+in the network are also included.
+"""
+function hyperindices(tn::TensorNetwork, i::Symbol; global_hyperindices=true, all_indices=false)
+    if !global_hyperindices
+        return hyperindices(tn[i], all_indices=all_indices)
+    else
+        all_hyperindices = Vector{Vector{Index}}()
+        tensor_indices = copy(inds(tn[i]))
+        while length(tensor_indices) > 0
+            index = tensor_indices[1]
+            connected_indices = find_connected_indices(tn, index)
+            push!(all_hyperindices, connected_indices)
+            setdiff!(tensor_indices, connected_indices)
+        end
+        return filter(x -> length(x) >= (all_indices ? 1 : 2), all_hyperindices)
+    end
+end
+
+"""
+    tensor_data(tn::TensorNetwork, i::Symbol; consider_hyperindices=true, global_hyperindices=true)
+
+Retrieve the tensor data for the given tensor. If the consider_hyperindices flag is true then
+then the data is reshaped to take into account the local hyperindices of the tensor. If the global_hyperindices
+index is also true then groups of hyperindices related via hyperindices for other tensors in the network are
+also considered.
+"""
+function tensor_data(tn::TensorNetwork, i::Symbol; consider_hyperindices=true, global_hyperindices=true)
+    if consider_hyperindices && global_hyperindices
+        global_hi = hyperindices(tn, i; global_hyperindices=true)
+        # filter any indices not connected to tensor
+        global_hi = map(global_hi) do x
+            x = filter(y -> y ∈ inds(tn[i]), x)
+        end
+        global_hi = filter(x -> length(x) > 1, global_hi)
+
+        local_hi = hyperindices(tn, i; global_hyperindices=false)
+        missing_hi = false
+        for g in global_hi
+            if findfirst(x -> Set(x) == Set(g), local_hi) === nothing
+                missing_hi = true
+            end
+        end
+        if missing_hi
+            t = store(tn[i])
+            if length(local_hi) > 0
+                local_hi_ranks = indices2ranks(tn[i], local_hi)
+                t = expand_tensor(t, local_hi_ranks)
+            end
+            global_hi_ranks = indices2ranks(tn[i], global_hi)
+            t = reduce_tensor(t, global_hi_ranks)
+            return t
+        end
+    end
+    # can delegate to tensor specific tensor_data function
+    return tensor_data(tn.tensor_map[i]; consider_hyperindices)
+end
 
 """
     neighbours(tn::TensorNetwork, tensor::Symbol)
@@ -123,7 +167,7 @@ function Base.push!(tn::TensorNetwork,
                     data::Array{T, N};
                     tid::Union{Nothing, Symbol}=nothing) where {T, N}
     @assert size(data) == Tuple(dim.(indices))
-    tensor = QXTensor(data, indices)
+    tensor = QXTensor(indices, data)
     if tid === nothing tid = next_tensor_id!(tn) end
     @assert !(tid in keys(tn))
     tn.tensor_map[tid] = tensor
@@ -140,7 +184,7 @@ end
 """
     push!(tn::TensorNetwork,
           tensor::QXTensor;
-          tid::Union{Nothing, Symbol}=nothing) where {N}
+          tid::Union{Nothing, Symbol}=nothing)
 
 Function to add a tensor to the tensor network.
 
@@ -150,7 +194,7 @@ generated if one is not set.
 """
 function Base.push!(tn::TensorNetwork,
                     tensor::QXTensor;
-                    tid::Union{Nothing, Symbol}=nothing) where {N}
+                    tid::Union{Nothing, Symbol}=nothing)
     if tid === nothing tid = next_tensor_id!(tn) end
     # TODO: It might be a good idea to assert tid doesn't already exist in tn.
     tn.tensor_map[tid] = tensor
@@ -164,7 +208,6 @@ function Base.push!(tn::TensorNetwork,
     tid
 end
 
-
 """
     simple_contraction(tn::TensorNetwork)
 
@@ -172,7 +215,9 @@ Function to perfrom a simple contraction, contracting all tensors in order.
 Only useful for very small networks for testing.
 """
 function simple_contraction(tn::TensorNetwork)
-    store(reduce(contract_tensors, tn, init=QXTensor(1.)))
+    a = QXTensor(1.)
+    for t in tn a = contract_tensors(a, t) end
+    tensor_data(a; consider_hyperindices=false)
 end
 
 """
@@ -191,38 +236,116 @@ function simple_contraction!(tn::TensorNetwork)
 end
 
 """
-    contract_pair!(tn::TensorNetwork, A_id::Symbol, B_id::Symbol; mock::Bool=false)
+    contract_pair(tn::TensorNetwork, a_sym::Symbol, b_sym::Symbol; mock::Bool=false)
 
-Contract the tensors in 'tn' with ids 'A_id' and 'B_id'. If the mock flag is true then the
+Contract the tensors in 'tn' with ids 'a_sym' and 'b_sym'. If the mock flag is true then the
+new tensor will be a mock tensor with the right dimensions but without the actual data.
+"""
+function contract_pair(tn::TensorNetwork, a_sym::Symbol, b_sym::Symbol; mock::Bool=false)
+    r = contraction_indices(tn, a_sym, b_sym)
+
+    # identify positions of local hyper index groups in c
+    pos = 1
+    c_hyper_indices = map(r.c_indices) do g
+        pos += length(g)
+        collect(pos-length(g):pos-1)
+    end
+    c_hyper_indices = convert(Vector{Vector{Int}}, c_hyper_indices)
+    filter!(x -> length(x) > 1, c_hyper_indices)
+
+    if mock || (tn[a_sym].storage isa MockTensor || tn[b_sym].storage isa MockTensor)
+        # flatten c_indices to get indices
+        c = QXTensor(convert(Vector{Index}, vcat(r.c_indices...)), c_hyper_indices)
+    else
+        c_data = EinCode((Tuple(r.a_labels), Tuple(r.b_labels)), Tuple(r.c_labels))(tensor_data(tn, a_sym), tensor_data(tn, b_sym))
+        c = QXTensor(convert(Vector{Index}, vcat(r.c_indices...)), c_hyper_indices, c_data)
+    end
+    c
+end
+
+"""
+    contract_pair!(tn::TensorNetwork, a_sym::Symbol, b_sym::Symbol, c_sym::Symbol=:_; mock::Bool=false)
+
+Contract the tensors in 'tn' with ids 'a_sym' and 'b_sym'. If the mock flag is true then the
 new tensor will be a mock tensor with the right dimensions but without the actual data.
 
-The resulting tensor is stored in `tn` under the symbol `C_id` if one is provided, otherwise
+The resulting tensor is stored in `tn` under the symbol `c_sym` if one is provided, otherwise
 a new id is created for it.
 """
-function contract_pair!(tn::TensorNetwork, A_id::Symbol, B_id::Symbol, C_id::Symbol=:_;
+function contract_pair!(tn::TensorNetwork, a_sym::Symbol, b_sym::Symbol, c_sym::Symbol=:_;
                         mock::Bool=false)
-    # Get and contract the tensors A and B to create tensor C.
-    A = tn.tensor_map[A_id]
-    B = tn.tensor_map[B_id]
-    C_id == :_ && (C_id = next_tensor_id!(tn))
-    C = contract_tensors(A, B, mock=mock)
+
+    c = contract_pair(tn, a_sym, b_sym; mock=mock)
+
+    # Get and contract the tensors a and b to create tensor c
+    a = tn.tensor_map[a_sym]
+    b = tn.tensor_map[b_sym]
+    c_sym == :_ && (c_sym = next_tensor_id!(tn))
 
     # Remove the contracted indices from the bond map in tn. Also, replace all references
-    # in tn to tensors A and B with a reference to tensor C.
-    common_indices = intersect(inds(A), inds(B))
+    # in tn to tensors a and b with a reference to tensor c
+    common_indices = intersect(inds(a), inds(b))
     for ind in common_indices
         delete!(tn.bond_map, ind)
     end
-    for ind in setdiff(union(inds(A), inds(B)), common_indices)
-        tn.bond_map[ind] = replace(tn.bond_map[ind], A_id=>C_id, B_id=>C_id)
+    for ind in symdiff(inds(a), inds(b))
+        tn.bond_map[ind] = replace(tn.bond_map[ind], a_sym => c_sym, b_sym => c_sym)
     end
 
-    # Add tensor C to the tn and remove both A and B.
-    tn.tensor_map[C_id] = C
-    delete!(tn.tensor_map, A_id); delete!(tn.tensor_map, B_id)
-    C_id
+    # Add tensor c to the tn and remove both a and b
+    tn.tensor_map[c_sym] = c
+    delete!(tn.tensor_map, a_sym); delete!(tn.tensor_map, b_sym)
+    c_sym
 end
 
+"""
+    contraction_indices(tn::TensorNetwork, a_sym::Symbol, b_sym::Symbol)
+
+Function to work out the contraction indices that would be used to contract the given
+tensors. Expected indices in Einstein notation using positive integers
+"""
+function contraction_indices(tn::TensorNetwork, a_sym::Symbol, b_sym::Symbol)
+    a_indices = hyperindices(tn, a_sym; all_indices=true)
+    b_indices = hyperindices(tn, b_sym; all_indices=true)
+    common_indices = intersect(inds(tn[a_sym]), inds(tn[b_sym]))
+    remaining_indices = symdiff(inds(tn[a_sym]), inds(tn[b_sym]))
+
+    # label a_indices in order
+    a_labels = collect(1:length(a_indices))
+    num_unique = length(a_indices)
+    b_labels = map(b_indices) do g
+        pos = findfirst(x -> length(intersect(g, x)) > 0, a_indices)
+        if pos === nothing
+            pos = num_unique += 1
+        end
+        pos
+    end
+
+    # to work out final indices we look at the indices which survive from each tensor
+    # find all index groups from a that are not fully contracted
+    c_indices = Vector{Vector{Index}}()
+    a_labels′ = map(zip(a_labels, a_indices)) do (i, g)
+        if length(setdiff(g, common_indices)) == 0
+            return nothing
+        else
+            push!(c_indices, intersect(g, remaining_indices))
+            return i
+        end
+    end
+
+    # find any index groups from b that survive
+    # these are groups that are not fully contracted or also present in a
+    b_labels′ = map(zip(b_labels, b_indices)) do (i, g)
+        if any(map(x -> length(intersect(g, x)) > 0, a_indices))
+            return nothing
+        else
+            push!(c_indices, intersect(g, remaining_indices))
+            return i
+        end
+    end
+    c_labels = convert(Vector{Int}, filter(x -> x !== nothing, [a_labels′..., b_labels′...]))
+    (a_labels = a_labels, b_labels = b_labels, c_labels = c_labels, c_indices = c_indices)
+end
 
 """
     contract_tn!(tn::TensorNetwork, plan)
@@ -239,7 +362,6 @@ function contract_tn!(tn::TensorNetwork, plan::Array{NTuple{3, Symbol}, 1})
     # Contract any disjoint tensors that may remain before returning the result.
     simple_contraction!(tn)
 end
-
 
 """
     decompose_tensor!(tn::TensorNetwork,
@@ -272,41 +394,39 @@ function decompose_tensor!(tn::TensorNetwork,
     end
 end
 
+# """
+#     replace_with_svd!(tn::TensorNetwork,
+#                       tensor_id::Symbol,
+#                       left_indices::Array{<:Index, 1};
+#                       kwargs...)
 
-"""
-    replace_with_svd!(tn::TensorNetwork,
-                      tensor_id::Symbol,
-                      left_indices::Array{<:Index, 1};
-                      kwargs...)
+# Function to replace a tensor in a tensor network with its svd.
 
-Function to replace a tensor in a tensor network with its svd.
+# The indices contained in 'left_indices' are considered the row indices of the tensor when
+# the svd is performed.
 
-The indices contained in 'left_indices' are considered the row indices of the tensor when
-the svd is performed.
+# # Keywords
+# - `maxdim::Int`: the maximum number of singular values to keep.
+# - `mindim::Int`: the minimum number of singular values to keep.
+# - `cutoff::Float64`: set the desired truncation error of the SVD.
+# """
+# function replace_with_svd!(tn::TensorNetwork,
+#                            tensor_id::Symbol,
+#                            left_indices::Array{<:Index, 1};
+#                            kwargs...)
+#     # Get the tensor and decompose it.
+#     tensor = tn.tensor_map[tensor_id]
+#     U, S, V = svd(convert(ITensor, tensor), left_indices; use_absolute_cutoff=true, kwargs...)
+#     S_data = reshape(collect(Diagonal(store(S))), prod(size(S)))
+#     S_QXTensor = QXTensor(S_data, collect(inds(S)), diagonal_check=false)
 
-# Keywords
-- `maxdim::Int`: the maximum number of singular values to keep.
-- `mindim::Int`: the minimum number of singular values to keep.
-- `cutoff::Float64`: set the desired truncation error of the SVD.
-"""
-function replace_with_svd!(tn::TensorNetwork,
-                           tensor_id::Symbol,
-                           left_indices::Array{<:Index, 1};
-                           kwargs...)
-    # Get the tensor and decompose it.
-    tensor = tn.tensor_map[tensor_id]
-    U, S, V = svd(convert(ITensor, tensor), left_indices; use_absolute_cutoff=true, kwargs...)
-    S_data = reshape(collect(Diagonal(store(S))), prod(size(S)))
-    S_QXTensor = QXTensor(S_data, collect(inds(S)))
-
-    # Remove the original tensor and add its svd factors to the network.
-    delete!(tn, tensor_id)
-    U_id = push!(tn, convert(QXTensor, U))
-    S_id = push!(tn, S_QXTensor)
-    V_id = push!(tn, convert(QXTensor, V))
-    U_id, S_id, V_id
-end
-
+#     # Remove the original tensor and add its svd factors to the network.
+#     delete!(tn, tensor_id)
+#     U_id = push!(tn, convert(QXTensor, U))
+#     S_id = push!(tn, S_QXTensor)
+#     V_id = push!(tn, convert(QXTensor, V))
+#     U_id, S_id, V_id
+# end
 
 """
     delete!(tn::TensorNetwork, tensor_id::Symbol)
@@ -323,56 +443,18 @@ function Base.delete!(tn::TensorNetwork, tensor_id::Symbol)
 end
 
 """
-    contract_ncon_indices(tn::TensorNetwork, A_sym::Symbol, B_sym)
-
-Function return indices in ncon format for contraction of tensors with given symbols.
-Returns two tuples for indices in each with convention that negative values are remaining
-indices and positive values are indices being contracted over.
-
-For example if (1, -1), (-2, 1) is returned, this menas that the first index of tensor A
-A is contracted with the second index of  tensor B and the resulting tensor will have
-indices corresponding to the second index of the first tensor and first index of the second
-tensor.
-"""
-function contract_ncon_indices(tn::TensorNetwork, A_sym::Symbol, B_sym::Symbol)
-    _contract_ncon_indices(IndexSet(inds(tn[A_sym])), IndexSet(inds(tn[B_sym])))
-end
-
-"""
-    _contract_ncon_indices(A_inds::IndexSet{M}, B_inds::IndexSet{N}) where {M, N}
-
-Function return indices in ncon format for contraction of tensors with given index sets.
-Returns two tuples for indices in each with convention that negative values are remaining
-indices and positive values are indices being contracted over.
-
-For example if (1, -1), (-2, 1) is returned, this menas that the first index of tensor A
-A is contracted with the second index of  tensor B and the resulting tensor will have
-indices corresponding to the second index of the first tensor and first index of the second
-tensor.
-"""
-function _contract_ncon_indices(A_inds::IndexSet{M}, B_inds::IndexSet{N}) where {M, N}
-    labels = ITensors.compute_contraction_labels(A_inds, B_inds)
-    # ITensors uses a different convention with negatie and positive reversed and
-    # find lowest positive
-    all_positive_labels = [x for x in vcat(collect.(labels)...) if x > 0]
-    offset = length(all_positive_labels) > 0 ? minimum(all_positive_labels) - 1 : 0
-    [Tuple([x > 0 ? -(x - offset) : -x for x in ls]) for ls in labels]
-end
-
-"""
     replace_tensor_symbol!(tn::TensorNetwork, orig_sym::Symbol, new_sym::Symbol)
 
 Replace the given symbol with the given new symbol
 """
 function replace_tensor_symbol!(tn::TensorNetwork, orig_sym::Symbol, new_sym::Symbol)
     tensor = tn[orig_sym]
-    for ind in inds(tensor)
-        replace!(tn[ind], orig_sym => new_sym)
+    for i in inds(tensor)
+        replace!(tn[i], orig_sym => new_sym)
     end
     tn.tensor_map[new_sym] = tensor
     delete!(tn.tensor_map, orig_sym)
 end
-
 
 """
     get_hyperedges(tn::TensorNetwork)::Array{Array{Symbol, 1}, 1}
@@ -381,52 +463,66 @@ Return an array of hyperedges in the given tensornetwork `tn`.
 
 Hyperedges are represented as arrays of tensor symbols.
 """
-function get_hyperedges(tn::TensorNetwork)::Array{Array{Symbol, 1}, 1}
-    # hyperedges are represented as arrays of tensor symbols.
+function get_hyperedges(tn::TensorNetwork)
     hyperedges = Array{Array{Symbol, 1}, 1}()
-
-    # Create an array of edges in the network which have not yet been assigned to a
-    # hyperedge. Also create a queue which will be used to assign edges to hyperedges.
     edges = collect(bonds(tn))
-    q = Queue{Index}()
+    while length(edges) > 0
+    # for edge in edges
+        edge = edges[1]
+        hyper_indices = find_connected_indices(tn, edge)
+        push!(hyperedges, union(map(x -> tn[x], hyper_indices)...))
+        setdiff!(edges, hyper_indices)
+    end
+    hyperedges
+end
 
-    while !isempty(edges)
-        # For the next edge in the network, which has not yet been assigned to a hyperedge,
-        # create a new hyperedge. Then add the edge to the queue where it will wait to be
-        # assigned to the new hyperedge.
-        push!(hyperedges, [])
-        enqueue!(q, pop!(edges))
+"""
+    find_connected_indices(tn::TensorNetwork, bond::Index)
 
-        while !isempty(q)
-            # While the queue is not empty, take the next edge in the queue and append
-            # the corresponding tensor symbols to the new hyperedge.
-            edge = dequeue!(q)
-            tensors = tn.bond_map[edge]
-            hyperedges[end] = union(hyperedges[end], tensors)
-
-            # Check if the neighbouring edges, of the edge just added to the new hyperedge,
-            # belong to the same hyperedge. If they do, add them to the queue.
-            for tensor_symbol in tensors
-                tensor = tn.tensor_map[tensor_symbol]
-                i = findfirst(group -> edge in tensor.indices[group], tensor.hyper_indices)
-                if !(i === nothing)
-                    # Create an array of neighbouring edges not yet assigned to the
-                    # hyperedge
-                    connected_edges = Array{Index, 1}()
-                    for j in tensor.hyper_indices[i]
-                        index = tensor.indices[j]
-                        if !(index == edge) && index in edges
-                            push!(connected_edges, index)
-                        end
+Given a tensor network and an index in the network, find all indices that are related via hyper edge
+relations. Involves recurisively checking bonds connected to neighbouring tensors of any newly
+related edges found. Returns an array of all edges in the group including the initial edge.
+"""
+function find_connected_indices(tn::TensorNetwork, bond::Index)
+    tensors_to_visit = Set{Symbol}()
+    push!.([tensors_to_visit], tn[bond])
+    related_edges = Set{Index}([bond])
+    while length(tensors_to_visit) > 0
+        tensor_sym = pop!(tensors_to_visit)
+        for g in hyperindices(tn[tensor_sym])
+            if length(intersect(related_edges, g)) > 0
+                new_edges = setdiff(g, related_edges)
+                for e in new_edges
+                    push!(related_edges, e)
+                    for t in tn[e]
+                        push!(tensors_to_visit, t)
                     end
-                    # Add these edges to the queue where they'll be assigned to the new
-                    # hyperedge and remove them from the array of edges not yet assigned to
-                    # a hyperedge.
-                    for e in connected_edges enqueue!(q, e) end
-                    setdiff!(edges, connected_edges)
                 end
             end
         end
     end
-    hyperedges
+    collect(related_edges)
+end
+
+"""
+    contraction_indices((a::QXTensor,b::QXTensor)
+
+Function to work out the contraction indices that would be used to contract the given
+tensors. Exptected indices in Einstein notation using positive integers
+"""
+function contraction_indices(a::QXTensor, b::QXTensor)
+    tn = TensorNetwork([a, b])
+    contraction_indices(tn, keys(tn)...)
+end
+
+"""
+    contract_tensors(a::QXTensor, b::QXTensor; mock::Bool=false)
+
+Function to contract two QXTensors and return another QXTensor. If the mock flag
+is false or either of the input tensors use MockTensor then the storage for the final
+tensor will be of type MockTensor.
+"""
+function contract_tensors(a::QXTensor, b::QXTensor; mock::Bool=false)
+    tn = TensorNetwork([a, b])
+    contract_pair(tn, keys(tn)...; mock=mock)
 end
