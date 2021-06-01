@@ -107,7 +107,7 @@ end
 """
     indices2ranks(tensor::QXTensor, hi::Vector{<:Vector{<:Index}})
 
-Function convert groups of indices to groups of ranks of those indices.
+Function convert groups of indices to groups of index positions (ranks).
 """
 function indices2ranks(tensor::QXTensor, hi::Vector{<:Vector{<:Index}})
     # create an array of the ranks from the groups of hyper indices

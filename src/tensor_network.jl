@@ -117,10 +117,8 @@ function tensor_data(tn::TensorNetwork, i::Symbol; consider_hyperindices=true, g
                 local_hi_ranks = indices2ranks(tn[i], local_hi)
                 t = expand_tensor(t, local_hi_ranks)
             end
-            if length(global_hi) > 0
-                global_hi_ranks = indices2ranks(tn[i], global_hi)
-                t = reduce_tensor(t, global_hi_ranks)
-            end
+            global_hi_ranks = indices2ranks(tn[i], global_hi)
+            t = reduce_tensor(t, global_hi_ranks)
             return t
         end
     end

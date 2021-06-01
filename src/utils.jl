@@ -203,16 +203,13 @@ Base.show(io::IO, ::MIME"text/plain", a::BlockTensor) =
     expand_tensor(A::AbstractArray{Elt, N}, hyper_index_groups::Array{Int64, 1})
 
 Function to expand the rank of the given tensor assuming the given hyper edge groups.
-Like a generalisation of Diagonal (but returns the full dense tensor). For example
-if passed a vector and given hyperindex groups [1,2], it will return a matrix
-where non diagonal elements are zero. Efficiency could be improved by creating
-a datastructure that implements
+Like a generalisation of Diagonal. For example if passed a vector and given hyperindex
+groups [1,2], it will return a matrix where non diagonal elements are zero. Returns a
+a BlockTensor object which does not store "off-diagonal" elements.
 
 ```
 julia> expand_tensor([1, 2], [[1, 2]])
-2×2 Matrix{Int64}:
- 1  0
- 0  2
+BlockTensor with dims (2, 2) and index map (1, 1)
 ```
 """
 function expand_tensor(A::AbstractArray{Elt, N}, hyper_index_groups::Array{Array{Int64, 1}, 1}) where {Elt, N}
