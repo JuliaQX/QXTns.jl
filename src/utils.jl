@@ -205,7 +205,7 @@ Base.show(io::IO, ::MIME"text/plain", a::BlockTensor) =
 Function to expand the rank of the given tensor assuming the given hyper edge groups.
 Like a generalisation of Diagonal (but returns the full dense tensor). For example
 if passed a vector and given hyperindex groups [1,2], it will return a matrix
-with where non diagonal elements are zero. Efficiency could be improved by creating
+where non diagonal elements are zero. Efficiency could be improved by creating
 a datastructure that implements
 
 ```
