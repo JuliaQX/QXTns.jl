@@ -89,7 +89,7 @@ QXTensor(t::Union{Nothing, <: AbstractArray}; kwargs...) =
 Get the data associated with the given tensor. If the consider_hyperindices flag is true
 then the rank is reduced to merge related indices. For example for a 5 rank tensor where
 the 2nd and 4th indices form a group of hyper indices, with this option set to true would
-return a rank 4 tensor where the 2nd index. With hyperindices set to false a rank 5 tensor
+return a rank 4 tensor where the 2nd index has been merged with the 4th. With `consider_hyperindices` set to false a rank 5 tensor
 is returned.
 """
 function tensor_data(tensor::QXTensor; consider_hyperindices::Bool=true)
