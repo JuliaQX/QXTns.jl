@@ -304,7 +304,7 @@ end
     contraction_indices(tn::TensorNetwork, a_sym::Symbol, b_sym::Symbol)
 
 Function to work out the contraction indices that would be used to contract the given
-tensors. Exptected indices in Einstein notation using positive integers
+tensors. Expected indices in Einstein notation using positive integers
 """
 function contraction_indices(tn::TensorNetwork, a_sym::Symbol, b_sym::Symbol)
     a_indices = hyperindices(tn, a_sym; all_indices=true)
