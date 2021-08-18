@@ -13,7 +13,7 @@ TestSetExtensions = "98d24dd4-01ad-11ea-1b02-c9a08f80db04"
 
 [compat]
 DataStructures = "0.18"
-ITensors = "0.1"
+ITensors = "0.1, 0.2"
 NDTensors = "0.1"
 OMEinsum = "0.4"
 TestSetExtensions = "2.0"
