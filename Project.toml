@@ -1,7 +1,7 @@
 name = "QXTns"
 uuid = "995e1dad-72e3-4b97-b122-7deaeb8b44f9"
 authors = ["QuantEx team"]
-version = "0.1.8"
+version = "0.1.9"
 
 [deps]
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
@@ -15,7 +15,7 @@ TestSetExtensions = "98d24dd4-01ad-11ea-1b02-c9a08f80db04"
 DataStructures = "0.18"
 ITensors = "0.1"
 NDTensors = "0.1"
-OMEinsum = "0.4"
+OMEinsum = "0.6"
 TestSetExtensions = "2.0"
 julia = "1.6"
 
