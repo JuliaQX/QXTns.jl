@@ -20,5 +20,5 @@ makedocs(;
 )
 
 deploydocs(;
-    repo="github.com/JuliaQX/QXTns.jl",
+    repo="github.com/JuliaQX/QXTns.jl.git",
 )
