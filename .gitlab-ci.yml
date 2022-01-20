@@ -37,15 +37,6 @@ stages:
         Pkg.instantiate()'
     - julia --project make.jl
 
-Julia 1.5:
-  stage: test
-  image: julia:1.5
-  tags:
-    - docker
-  extends:
-    - .script
-    - .coverage
-
 Julia 1.6:
   stage: test
   image: julia:1.6
@@ -55,9 +46,18 @@ Julia 1.6:
     - .script
     - .coverage
 
+Julia 1.7:
+  stage: test
+  image: julia:1.7
+  tags:
+    - docker
+  extends:
+    - .script
+    - .coverage
+
 docs:
   stage: docs
-  image: julia:1.5
+  image: julia:1.6
   tags:
     - docker
   extends:
